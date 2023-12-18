@@ -388,7 +388,7 @@ int process_and_send_data(int sock, mqtt_cli_t *cli, uint8_t *buf, size_t buf_le
   return RC_SUCCESS;
 }
 
-mqtt_rc_t cb_connack(const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
+void cb_connack(const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
   if(pkt->rc == RC_SUCCESS) {
     printf("READY\r\n");
   }
@@ -450,6 +450,7 @@ int main(int argc, char** argv) {
   mqtt_channel_t channel;
   struct itimerval timer;
   time_t now;
+  int counter = 0;
 
   /* Initialize */
   memset( &cli, 0x00, sizeof(cli));
@@ -700,6 +701,7 @@ int main(int argc, char** argv) {
     }
     /* Check if there is something to read */
 	  else if (FD_ISSET(sock, &readfds)) {
+      ++counter;
       /* Receive and process */
       while( 1 ) {
 
@@ -736,7 +738,7 @@ int main(int argc, char** argv) {
 
         if( length > 0) {
           memcpy( send_buf, recv_buf, length);
-          memmove( recv_buf, recv_buf+length, (recv_buf_off > length) ? recv_buf_off - length: length );
+          memmove( recv_buf, recv_buf+length, /*(recv_buf_off > length) ?*/ recv_buf_off - length/*: length*/ );
           recv_buf_off -= length;
           recv_buf_len += length;
 
@@ -765,7 +767,10 @@ int main(int argc, char** argv) {
       } /* Receive and process */
 	  }
 
-    //sleep( 1 );
+    if(counter == 10000) {
+      break;
+    }
+
   } /* while loop */
 
   /* Exit the program */
@@ -781,7 +786,7 @@ finish:
     free( log_str );
   }
   if(NULL != recv_buf) {
-    free( recv_buf );
+    free( recv_buf ); // TODO: problem is here
   }
   if(NULL != send_buf) {
     free( send_buf );

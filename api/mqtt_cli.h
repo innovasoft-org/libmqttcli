@@ -38,7 +38,7 @@ struct mqtt_cli {
     void (*get_keep_alive) (mqtt_cli_t *self, uint16_t *keep_alive);
 
     /** Obtains MQTT protocol version */
-    void (*get_version) (mqtt_cli_t *self, uint32_t *version);
+    void (*get_lib_version) (mqtt_cli_t *self, uint32_t *version);
     /** Obtain last packet sent */
     void (*get_last_pkt) (mqtt_cli_t *self, uint8_t *last_pkt);
     /** Obtains devices added devices count */
@@ -61,8 +61,10 @@ struct mqtt_cli {
     void (*get_connect_flags) (mqtt_cli_t *self, uint8_t *connect_flags);
     /** Enforces disconnect during empty receiving */
     void (*disconnect) (mqtt_cli_t *self);
-    void (*set_broker_ip) (mqtt_cli_t *self, uint32_t broker_ip);
-    void (*get_broker_ip) (mqtt_cli_t *self, uint32_t *broker_ip);
+    void (*set_broker_ip) (mqtt_cli_t *self, uint32_t ip);
+    void (*get_broker_ip) (mqtt_cli_t *self, uint32_t *ip);
+    void (*set_broker_connect_flags) (mqtt_cli_t *self, uint8_t connect_flags);
+    void (*get_broker_connect_flags) (mqtt_cli_t *self, uint8_t *connect_flags);
     /** Sets callback on received packet DISCONNECT */
     void (*set_cb_disconnect) (mqtt_cli_t *self, cb_mqtt_disconnect_t cb_mqtt_disconnect);
     /** Sets callback on received packet PUBACK */
