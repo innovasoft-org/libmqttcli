@@ -8,10 +8,10 @@ project(mqtt
 
 # Collect the sources
 add_executable(mqtt
-  src/main.c
-  src/utils.c
+  main.c
+  utils.c
 )
 
 target_link_libraries(mqtt
-  ${CMAKE_SOURCE_DIR}/lib/libmqttcli.a
+  ${CMAKE_SOURCE_DIR}/../../lib/libmqttcli.a
 )

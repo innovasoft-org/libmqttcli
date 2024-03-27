@@ -1,6 +1,6 @@
+#define _POSIX_C_SOURCE 200809L
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <signal.h> /* sigaction() ... */
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -13,20 +13,15 @@
 #include <getopt.h>
 #include <stdarg.h> /* va_start, va_arg_, va_end */
 #include <time.h> /* time() */
+#include <signal.h> /* sigaction() ... */
 
 #include "main.h"
 #include "utils.h"
 #include "utils.h"
-#include "../api/mqtt_cli.h"
+#include "../../api/mqtt_cli.h"
 
 /** Program context */
 static context_t ctx;
-
-/** Timeout indicator */
-static uint8_t timeout;
-
-/** Program state */
-static uint8_t state;
 
 static struct option long_options[] = {
   {L_OPT_HOST,        required_argument,  0,  S_OPT_HOST},
@@ -101,6 +96,7 @@ int validate_args(int argc, char **argv) {
         break;
       case S_OPT_PASSWORD:
         length = strlen( optarg );
+        printf("length = %ld\r\n", length);
         if(length > sizeof(ctx.password) / sizeof(char) ) {
           TOLOG(LOG_ERR, "Invalid password length");
         }
@@ -182,11 +178,11 @@ void signal_handler(int sig)
 	switch(sig)
 	{
 		case SIGALRM:
-			timeout = 1;
+			ctx.timer_int = 1;
 			break;
 		case SIGINT:
 		case SIGTERM:
-			state = 0;
+			ctx.state = 0;
 			break;
 		case SIGHUP:
 			TOLOG(LOG_WARNING,"Received SIGHUP signal.");
@@ -201,14 +197,24 @@ void signal_handler(int sig)
  * @brief Prints available options for the program
  */
 void usage(const char* program) {
-	printf("usage: %s\r\n", program);
-  printf(" -%c, --%s\r\n\t%s\r\n", S_OPT_HOST,        L_OPT_HOST,        "host ip address to be used");
-  printf(" -%c, --%s\r\n\t%s\r\n", S_OPT_PORT,        L_OPT_PORT,        "port to be used");
-  printf("\tdefault: INADDR_ANY\r\n");
-  printf(" -%c, --%s\r\n\t%s\r\n", S_OPT_BUFFER_SIZE, L_OPT_BUFFER_SIZE, "buffer size");
-  printf(" --%s\r\n\t%s\r\n",                         L_OPT_PUBLISH,     "publish packet");
-  printf(" --%s\r\n\t%s\r\n",                         L_OPT_SUBSCRIBE,   "subscribe packet");
-  printf(" --%s\r\n\t%s\r\n",                         L_OPT_REUSE_ADDR,  "turns on reuse address");
+  printf("NAME\r\n");
+	printf("       %s\r\n", program);
+  printf("SYNOPSIS\r\n");
+  printf("       %s %s", program, "--pub [options]\r\n");
+  printf("       %s %s", program, "--sub [options]\r\n");
+  printf("OPTIONS\r\n");
+  printf(" -%c user_id, --%s user_id\r\n\t%s\r\n",     S_OPT_USERID,      L_OPT_USERID,        "Sets user_id used during CONNECT packet creation. If not specified user_id is auto generated.");
+  printf(" -%c user_name, --%s user_name\r\n\t%s\r\n", S_OPT_USERNAME,    L_OPT_USERNAME,      "Sets user_name used during CONNECT packet creation.");
+  printf(" -%c password, --%s password\r\n\t%s\r\n",   S_OPT_PASSWORD,    L_OPT_PASSWORD,      "Sets password used during CONNECT packet creation.");
+  printf(" -%c size, --%s size\r\n\t%s\r\n",           S_OPT_BUFFER_SIZE, L_OPT_BUFFER_SIZE,   "Sets buffer size, which is dynamically allocated.");
+  printf(" -%c host_name, --%s host_name\r\n\t%s\r\n", S_OPT_HOST,        L_OPT_HOST,          "Sets remote host name or IP address.");
+  printf(" -%c message, --%s message\r\n\t%s\r\n",     S_OPT_MESSAGE,     L_OPT_MESSAGE,       "Sets the message used during PUBLISH packet creation.");
+  printf(" -%c port, --%s port\r\n\t%s\r\n",           S_OPT_PORT,        L_OPT_PORT,          "Sets the remote port to be used.");
+  printf(" -%c topic, --%s topic\r\n\t%s\r\n",         S_OPT_TOPIC,       L_OPT_TOPIC,         "Sets the topic used during PUBLISH or SUBSCRIBE packets creation.");
+  printf(" -%c, --%s\r\n\t%s\r\n",                     S_OPT_VERBOSE,     L_OPT_VERBOSE,       "Runs the program in verbose mode.");
+  printf(" --%s\r\n\t%s\r\n",                          L_OPT_PUBLISH,                          "Runs the program to publish the packet.");
+  printf(" --%s\r\n\t%s\r\n",                          L_OPT_SUBSCRIBE,                        "Runs the program to subscribe packets.");
+  printf(" --%s\r\n\t%s\r\n",                          L_OPT_REUSE_ADDR,                       "Turns on to reuse the the address.");
 	printf("\r\n");
 }
 
@@ -352,7 +358,7 @@ int send_data(int sock, mqtt_cli_t *cli, uint8_t *buf, size_t *length, uint8_t *
   return RC_SUCCESS;
 }
 
-int process_and_send_data(int sock, mqtt_cli_t *cli, uint8_t *buf, size_t buf_len, size_t *length, mqtt_channel_t *channel, uint8_t *log_str, size_t log_str_len) {
+int process_and_send_data(int sock, mqtt_cli_t *cli, clv_t *data, mqtt_channel_t *channel, uint8_t *log_str, size_t log_str_len) {
   fd_set writefds;
   struct timeval tv;
   int rc;
@@ -363,18 +369,18 @@ int process_and_send_data(int sock, mqtt_cli_t *cli, uint8_t *buf, size_t buf_le
 
   /* Processing and sending */
   while( 1 ) {
-    rc = cli->process( cli, buf, buf_len, length, channel);
+    rc = cli->process( cli, data, channel);
     if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
       TOLOG(LOG_ERR, "process( ... ), rc = %d", rc);
       break;
     }
 
-    if( !length ) {
+    if( !data->length ) {
       /* there is nothing to send */
       break;
     }
 
-    if( (rc = send_data(sock, cli, buf, length, log_str, log_str_len)) < 0) {
+    if( (rc = send_data(sock, cli, data->value, &(data->length), log_str, log_str_len)) < 0) {
       return rc;
     }
 
@@ -388,13 +394,30 @@ int process_and_send_data(int sock, mqtt_cli_t *cli, uint8_t *buf, size_t buf_le
   return RC_SUCCESS;
 }
 
-mqtt_rc_t cb_connack(const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
-  if(pkt->rc == RC_SUCCESS) {
-    printf("READY\r\n");
+mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
+  uint8_t properties[] = {0x26, 0x00, 0x01, 'n', 0x00, 0x01, 'v'};
+  lv_t PROPERTIES = {.length=sizeof(properties)/sizeof(uint8_t), .value=properties };
+  mqtt_publish_params_t publish_params;
+  mqtt_subscribe_params_t subscribe_params;
+
+  if(ctx.publish == 1) {
+    publish_params.flags = 0x02;
+    publish_params.message = (lv_t) {.length=strlen(ctx.message), .value=ctx.message };
+    publish_params.properties = PROPERTIES;
+    publish_params.topic = (lv_t) {.length=strlen(ctx.topic), .value=ctx.topic };
+    self->publish(self, &publish_params);
   }
+  
+  if(ctx.subscribe == 1) {
+    subscribe_params.filter = (mqtt_subscribe_filter_t) {.length=strlen(ctx.topic), .options=1, .value=ctx.topic, };
+    subscribe_params.properties = (lv_t) {.length=0, .value=NULL };
+    self->subscribe(self, &subscribe_params);
+  }
+
+  return RC_SUCCESS;
 }
 
-mqtt_rc_t cb_publish(const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
+mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
   int i;
   uint8_t c;
   uint8_t *topic = ctx.topic;
@@ -402,12 +425,13 @@ mqtt_rc_t cb_publish(const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
   size_t offset;
 
   if( topic[0] || message[0]) {
-    ctx.topic[0] = 0;
-    ctx.message[0] = 0;
+    topic[0] = 0;
+    message[0] = 0;
     sleep(1);
     return RC_SUCCESS;
   }
 
+  /* Save received topic, it will be displayed in main function */
   offset = 0;
   for(i=0; i<pkt->topic.length; ++i) {
     c = pkt->topic.value[i];
@@ -419,6 +443,8 @@ mqtt_rc_t cb_publish(const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
     }
   }
   sprintf( topic + offset, "\0");
+
+  /* Save received message, it will be displayed in main function */
   offset = 0;
   for(i=0; i<pkt->message.length; ++i) {
     c = pkt->message.value[i];
@@ -437,7 +463,7 @@ mqtt_rc_t cb_publish(const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
 int main(int argc, char** argv) {
   int sock;
   uint32_t srv_ip;
-  uint8_t *send_buf = NULL, *recv_buf = NULL, is_alive;
+  uint8_t *send_buf = NULL, *recv_buf = NULL;
   size_t length, recv_buf_len, recv_buf_off, send_buf_len, recv_len, i;
   char *log_str = NULL, c;
   int rc, optval, ret, log_str_len;
@@ -450,6 +476,9 @@ int main(int argc, char** argv) {
   mqtt_channel_t channel;
   struct itimerval timer;
   time_t now;
+  lv_t packet, cli_userid, cli_username, cli_password;
+  mqtt_publish_params_t publish_params;
+  mqtt_subscribe_params_t subscribe_params;
 
   /* Initialize */
   memset( &cli, 0x00, sizeof(cli));
@@ -484,6 +513,8 @@ int main(int argc, char** argv) {
     rc = RC_FAILURE;
     goto finish;
   }
+
+  clv_t data = {.capacity=send_buf_len, .value=send_buf};
 
   /* Configure signal_handler as the signal handler for SIGALRM */
   memset (&sa, 0, sizeof (sa));
@@ -538,46 +569,70 @@ int main(int argc, char** argv) {
   }
 
   /* Initializing MQTT client */
+  if(ctx.verbose) {
+    printf("Initializing MQTT client...");
+  }
   if( MQTT_SUCCESS != (rc = mqtt_cli_init( &cli )) ) {
     TOLOG(LOG_ERR,"mqtt_cli_init( ... ), rc = %d", rc);
     rc = RC_FAILURE;
     goto finish;    
   }
+  if(ctx.verbose) {
+    printf("OK\r\n");
+  }
 
   /* Configuring MQTT client */
+  if(ctx.verbose) {
+    printf("Configuring MQTT client...");
+  }
   if( !ctx.verbose && ctx.subscribe ) {
     cli.set_cb_publish( &cli, cb_publish );
-    cli.set_cb_connack( &cli, cb_connack );
   }
-  cli.set_broker_ip( &cli, srv_ip);
+  cli.set_cb_connack( &cli, cb_connack );
+  cli.set_br_ip( &cli, srv_ip);
   cli.set_timeout( &cli, (uint16_t) ctx.timeout);
-  cli.set_keep_alive( &cli, (uint16_t) 10);
+  cli.set_br_keepalive( &cli, (uint16_t) 60);
   if(ctx.userid[0] == 0) {
     now = time(NULL);
     ctx.userid[0] = ctx.publish == 1 ? 'p' : 's';
     strftime(&(ctx.userid[1]), sizeof(ctx.userid)-1, "%Y%m%d%H%M%S", localtime(&now));
   }
-  if( MQTT_SUCCESS != (rc = cli.set_user_id( &cli, ctx.userid )) ) {
-    TOLOG(LOG_ERR,"cli.set_user_id( ... ), rc = %d", rc);
+  cli_userid.length = strlen( ctx.userid );
+  cli_userid.value = ctx.userid;
+  if( MQTT_SUCCESS != (rc = cli.set_br_userid( &cli, &cli_userid )) ) {
+    TOLOG(LOG_ERR,"cli.set_br_userid( ... ), rc = %d", rc);
     rc = RC_FAILURE;
     goto finish;
   }
-  if( strlen(ctx.username) &&  MQTT_SUCCESS != (rc = cli.set_user_name( &cli, ctx.username )) ) {
-    TOLOG(LOG_ERR,"cli.set_user_name( ... ), rc = %d", rc);
+  cli_username.length = strlen (ctx.username);
+  cli_username.value = ctx.username;
+  if( cli_username.length && MQTT_SUCCESS != (rc = cli.set_br_username( &cli, &cli_username )) ) {
+    TOLOG(LOG_ERR,"cli.set_br_username( ... ), rc = %d", rc);
     rc = RC_FAILURE;
     goto finish;   
   }
-  if( strlen(ctx.password) && MQTT_SUCCESS != (rc = cli.set_password( &cli, ctx.password )) ) {
-    TOLOG(LOG_ERR,"cli.set_password( ... ), rc = %d", rc);
+  cli_password.length = strlen(ctx.password);
+  cli_password.value = ctx.password;
+  if( cli_password.length && MQTT_SUCCESS != (rc = cli.set_br_password( &cli, &cli_password )) ) {
+    TOLOG(LOG_ERR,"cli.set_br_password( ... ), rc = %d", rc);
     rc = RC_FAILURE;
     goto finish;   
+  }
+  if(ctx.verbose) {
+    printf("OK\r\n");
   }
 
   /* Connecting to the server (broker) */
+  if(ctx.verbose) {
+    printf("Connecting to the server (broker)...");
+  }
   if( -1 == connect(sock, (struct sockaddr*)&server, sizeof(server) ) ) {
     TOLOG(LOG_ERR,"connect( ... ), errno = %d", errno);
     rc = RC_FAILURE;
     goto finish;
+  }
+  if(ctx.verbose) {
+    printf("OK\r\n");
   }
 
   /* Start non-blocking mode */
@@ -603,82 +658,32 @@ int main(int argc, char** argv) {
     printf("Press Ctrl+c to stop\r\n");
   }
 
-  state = 1;
+  ctx.state = 1;
 	tv.tv_sec = 0;
 	tv.tv_usec = 0;
   recv_buf_off = 0;
-  uint8_t properties[] = {0x26, 0x00, 0x01, 'n', 0x00, 0x01, 'v'};
-  while( state ) {
+  while( ctx.state ) {
+    /* Printing received and saved topic and message (if any) */
     if( ctx.subscribe == 2 && ctx.topic[0] && ctx.message[0]) {
       printf("%s: %s\r\n", ctx.topic, ctx.message);
       ctx.topic[0] = 0;
       ctx.message[0] = 0;
     }
-    if(timeout) {
-      timeout = 0;
-      is_alive = 0;
-      channel.ip_address = srv_ip;
+    /* Processing timeout (if any) */
+    if(ctx.timer_int) {
+      ctx.timer_int = 0;
+      channel.ip_address = 0;
       channel.user_id = 0;
-      cli.is_alive( &cli, &channel, &is_alive);
-
-      /* Sending (if possible) */
-      if(is_alive && ctx.publish == 1) {
-        length = ctx.buffer_size;
-        if( MQTT_SUCCESS != (rc = cli.publish_ex( &cli, ctx.topic, ctx.message, properties, sizeof(properties)/sizeof(uint8_t), send_buf, &length ))) {
-          TOLOG(LOG_ERR,"publish( ... ), rc = %d", rc);
-          rc = RC_FAILURE;
-          goto finish;
-        }
-        memset( ctx.topic, 0x00, sizeof(ctx.topic)/sizeof(uint8_t));
-        memset( ctx.message, 0x00, sizeof(ctx.message)/sizeof(uint8_t));
-        ctx.publish = 2;
-        rc = send_data(sock, &cli, send_buf, &length, log_str, log_str_len);
-        if(rc == RC_FAILURE) {
-          TOLOG(LOG_ERR, "Sending failed");
-          break;
-        }
-        else if(rc == RC_EXIT) {
-          TOLOG(LOG_ERR, "Connection closed");
-          break;
-        }
+      data.length = 0;
+      rc = process_and_send_data(sock, &cli, &data, &channel, log_str, log_str_len);
+      if(rc == RC_FAILURE) {
+        TOLOG(LOG_ERR, "Sending failed");
+        break;
       }
-      else if(ctx.publish == 2) {
-        ctx.publish = 0;
-        cli.disconnect( &cli );
-      }
-      else if(is_alive && ctx.subscribe == 1) {
-        length = ctx.buffer_size;
-        if( MQTT_SUCCESS != (rc = cli.subscribe_ex( &cli, ctx.topic, properties, sizeof(properties)/sizeof(uint8_t), send_buf, &length ))) {
-          TOLOG(LOG_ERR,"subscribe( ... ), rc = %d", rc);
-          rc = RC_FAILURE;
-          goto finish;
-        }
-        memset( ctx.topic, 0x00, sizeof(ctx.topic)/sizeof(uint8_t));
-        ctx.subscribe = 2;
-        rc = send_data(sock, &cli, send_buf, &length, log_str, log_str_len);
-        if(rc == RC_FAILURE) {
-          TOLOG(LOG_ERR, "Sending failed");
-          break;
-        }
-        else if(rc == RC_EXIT) {
-          TOLOG(LOG_ERR, "Connection closed");
-          break;
-        }
-      }
-      else {
-        length = 0;
-        channel.ip_address = 0;
-        channel.user_id = 0;
-        rc = process_and_send_data(sock, &cli, send_buf, send_buf_len, &length, &channel, log_str, log_str_len);
-        if(rc == RC_FAILURE) {
-          TOLOG(LOG_ERR, "Sending failed");
-          break;
-        }
-        else if(rc == RC_EXIT) {
-          TOLOG(LOG_ERR, "Connection closed");
-          break;
-        }
-      }
+      else if(rc == RC_EXIT) {
+        TOLOG(LOG_ERR, "Connection closed");
+        break;
+      }    
     }
     /* Prepare the read socket sets for network I/O notification */
     FD_ZERO(&readfds);
@@ -702,8 +707,7 @@ int main(int argc, char** argv) {
 	  else if (FD_ISSET(sock, &readfds)) {
       /* Receive and process */
       while( 1 ) {
-
-        if(recv_buf_len <= 0 || recv_buf_off < 0) {
+        if(recv_buf_off < 0) {
           TOLOG(LOG_ERR, "It was impossible to receive all data,");
           goto finish;
         }
@@ -732,11 +736,13 @@ int main(int argc, char** argv) {
         recv_buf_off += recv_len;
         length = 0;
 
-        cli.get_pkt_length(&cli, recv_buf, recv_buf_off, &length);
+        packet.length = recv_buf_off;
+        packet.value = recv_buf;
+        cli.get_pkt_length(&cli, &packet, &length);
 
-        if( length > 0) {
+        if( recv_buf_off >= length) {
           memcpy( send_buf, recv_buf, length);
-          memmove( recv_buf, recv_buf+length, (recv_buf_off > length) ? recv_buf_off - length: length );
+          memmove( recv_buf, recv_buf+length, recv_buf_off - length);
           recv_buf_off -= length;
           recv_buf_len += length;
 
@@ -750,7 +756,8 @@ int main(int argc, char** argv) {
 
           channel.ip_address = srv_ip;
           channel.user_id = 0;
-          rc = process_and_send_data(sock, &cli, send_buf, send_buf_len, &length, &channel, log_str, log_str_len);
+          data.length = length;
+          rc = process_and_send_data(sock, &cli, &data, &channel, log_str, log_str_len);
           if(rc == RC_FAILURE) {
             TOLOG(LOG_ERR, "Sending failed");
             break;
@@ -765,7 +772,6 @@ int main(int argc, char** argv) {
       } /* Receive and process */
 	  }
 
-    //sleep( 1 );
   } /* while loop */
 
   /* Exit the program */

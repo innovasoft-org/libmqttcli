@@ -1,0 +1,16 @@
+{
+  "cSpell.words": [
+    "avty",
+    "connack",
+    "hadev",
+    "homeassistant",
+    "htos",
+    "mqttcli",
+    "Piwowarczyk",
+    "stoh",
+    "TOLOG"
+  ],
+  "files.associations": {
+    "signal.h": "c"
+  }
+}

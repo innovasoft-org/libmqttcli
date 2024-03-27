@@ -1,2 +1,2 @@
-# mqtt
-MQTT Client implementation using proprietary library.
+# MQTT Client Library
+Demonstrates usage of the library
