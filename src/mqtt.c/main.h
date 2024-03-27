@@ -1,7 +1,7 @@
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
-#include "../api/mqtt_common.h"
+#include "../../api/mqtt_common.h"
 
 /** Program name */
 #define PROGRAM_NAME      "mqtt"
@@ -68,7 +68,7 @@
 #define L_OPT_PASSWORD      "password"
 /** Short option: verbose */
 #define S_OPT_VERBOSE      'v'
-/** Long option: password */
+/** Long option: verbose */
 #define L_OPT_VERBOSE      "verbose"
 
 
@@ -110,13 +110,17 @@ typedef struct program_ctx {
   /** Log file descriptor (determines were to log the data) */
   FILE *log_fd;
   /** User ID */
-  char userid[MAX_USERID_LEN];
+  char userid[MAX_USERID_LEN+1];
   /** User Name */
-  char username[MAX_USERNAME_LEN];
+  char username[MAX_USERNAME_LEN+1];
   /** User Name */
-  char password[MAX_PASSWORD_LEN];
+  char password[MAX_PASSWORD_LEN+1];
   /** Verbose */
   uint8_t verbose;
+  /** Stores program state */
+  uint8_t state;
+  /** Stores timer interrupt status */
+  uint8_t timer_int;
 } context_t;
 
 #define IS_MULTICAST(IPADDR) ( (IPADDR & 0x000000E0) == 0x000000E0 )
