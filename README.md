@@ -1,2 +1,4 @@
 # MQTT Client Library
-Demonstrates usage of the library
+## Introduction
+The aim of this repo is to demonstrate possibilities of the library `libmqttcli.a`
+## Features
