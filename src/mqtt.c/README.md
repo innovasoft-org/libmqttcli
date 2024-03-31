@@ -3,7 +3,7 @@
 &emsp;mqtt - publishes or subscribes packets using MQTT protocol
 ## SYNOPSIS
 &emsp;mqtt _--pub [-I user_id] [-N user_name] [-P password] [-b size] [-h host] [-m message] [-p port] [-t topic] [-v]_  
-&emsp;mqtt _--sub [-I user ID] [-N user_name] [-P password] [-b size] [-h host] [-p port] [-t topic] [v]_  
+&emsp;mqtt _--sub [-I user_id] [-N user_name] [-P password] [-b size] [-h host] [-p port] [-t topic] [v]_  
 ## DESCRIPTION
 &emsp;Connects to the broker using specified credentials and publishes to specified topic or starts waiting for subscribed topic.
 
