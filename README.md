@@ -27,10 +27,26 @@ cli.set_br_keepalive( &cli, keep_alive );
 ```
 ### Sending publish package
 ```
-rc = dev->publish_ex( dev, &params, &output);
+const char *topic = "sensor01";
+const char *message = "ON";
+uint8_t buffer[1024] = { 0 };
+const lv_t cli_topic = { .length=strlen(topic), .value=(uint8_t*)topic  };
+const lv_t cli_message = { .length=strlen(message), .value=(uint8_t*)message  };
+clv_t data = { .capacity=sizeof(buffer)/sizeof(uint8_t), .value=buffer };
+mqtt_publish_params_t params;
+
+params.message = message;
+params.properties.length = 0;
+params.properties.value = NULL;
+params.topic = topic;
+cli.publish_ex( &cli, &params, &data);
 ```
 ### Sending subscribe package
 ### Processing packages
+### Closing the library
+```
+mqtt_cli_destr( &cli );
+```
 ## Examples
 | Link | Description |
 |------|-------------|
