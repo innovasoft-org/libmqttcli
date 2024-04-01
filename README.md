@@ -16,7 +16,11 @@ The library is not exchanging packets via internet as well as it is not consciou
 - If shall be checked if `process` function has prepared any data to send. If any data was prepared then it must be send to the broker. The `process` function shall be repeated untill it teturns the `MQTT_SUCCESS` reason code.
 - If the `process` function has returned other reason than `MQTT_PENDING_DATA`, an apropriate actions shall be take into account.
 
-![Program flow](doc/program_flow.svg)
+<p align="center">
+  <img src="doc/program_flow.svg" /> </br>
+  <b> Fig. 1. Program flow. </b>
+</p>
+
 ### Initialisation
 The first step is to initialize the library.
 ```
