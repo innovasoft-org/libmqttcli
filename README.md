@@ -3,7 +3,7 @@
 The aim of this repo is to demonstrate possibilities as well as usage of the `libmqttcli.a` library.
 ## Features
 - Supports the client side of the MQTT protocol.
-- Is relatively easy to use. The user does not need to know details of the MQTT protocol.
+- Is relatively easy to use. The user does not need to know details of the MQTT protocol. The library automatically prepares the following packets: `CONNECT`, `AUTH`, `DISCONNECT`, `PUBACK` and `PINGREQ`. The user via library interface is allowed to prepare the following packets: `PUBLISH`, `SUBSCRIBE` and `DISCONNECT`.
 - The whole library contains proprietary implementation. There are no third party implementations included. The following external standard functions are used: `malloc`, `memcpy` and `memcmp`.
 - The library is totally written in C89 standard.
 - The library does not establish any internet connection. Received or prepared packets shall be exchanged by the user.
@@ -13,7 +13,8 @@ The aim of this repo is to demonstrate possibilities as well as usage of the `li
 The library is not exchanging packets via internet as well as it is not conscious of ellapsed time, therefore the user shall perform these actions additionally. To achieve this the following shall be designed in the program flow:
 - The timer should be configured to generate an interrupt after a specified period of time, hereinafter referred to as `timeout`. If the `timeout` was detected then empty packet shall be presented to the `process` function
 - If any data was received it shall be presented to the `process` function.
-- If shall be checked if `process` function has prepared any data to send. If any data was prepared then it must be send to the broker. The `process` function shall be repeated untill it teturn the `MQTT_PENDING_DATA` reason code.
+- If shall be checked if `process` function has prepared any data to send. If any data was prepared then it must be send to the broker. The `process` function shall be repeated untill it teturns the `MQTT_SUCCESS` reason code.
+- If the `process` function has returned other reason than `MQTT_PENDING_DATA`, an apropriate actions shall be take into account.
 ### Initialisation
 The first step is to initialize the library.
 ```
