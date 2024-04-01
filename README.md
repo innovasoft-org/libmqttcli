@@ -1,14 +1,17 @@
 # MQTT Client Library
 ## Introduction
-The aim of this repo is to demonstrate possibilities of the library `libmqttcli.a`
+The aim of this repo is to demonstrate possibilities as well as usage of the `libmqttcli.a` library.
 ## Features
-- Relatively easy to use. The user does not need to know details of MQTT protocol.
-- Whole library contains proprietary implementation. The only external standard functions are used: `malloc`, `memcpy` and `memcmp`.
-- The library was totally written in C89.
-- Specific behaviour could be added using callback functions.
+- Supports the client side of the MQTT protocol.
+- Is relatively easy to use. The user does not need to know details of the MQTT protocol.
+- The whole library contains proprietary implementation. There are no third party implementations included. The following external standard functions are used: `malloc`, `memcpy` and `memcmp`.
+- The library is totally written in C89 standard.
+- The library does not establish any internet connection. Received or prepared packets shall be exchanged by the user.
+- Specific behaviour could be added using callback functions, e.g., client authentication to the broker.
 ## Usage
+The
 ### Initialisation
-/the first step is to initialize the library.
+The first step is to initialize the library.
 ```
 mqtt_cli cli;
 
