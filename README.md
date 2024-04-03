@@ -12,16 +12,14 @@ The aim of this repo is to demonstrate possibilities as well as usage of the `li
 - The whole library contains proprietary implementation. There are no third party implementations included. The following external standard functions are used: `malloc`, `memcpy` and `memcmp`.
 - The library is totally written in C89 standard.
 - The library does not establish any internet connection. Received or prepared packets shall be exchanged by the user.
-- Specific behaviour could be added using callback functions, e.g., client authentication to the broker.
+- Specific behavior could be added using callback functions, e.g., client authentication to the broker.
 ## Usage
 ### Requirements
-The library is not exchanging packets via internet as well as it is not conscious of ellapsed time, therefore the user shall perform these actions additionally. To achieve this the following shall be designed in the program flow:
-- The timer should be configured to generate an interrupt after a specified period of time, hereinafter referred to as `timeout`. If the `timeout` was detected then empty packet shall be presented to the `process` function
-- If any data was received it shall be presented to the `process` function.
-- If shall be checked if `process` function has prepared any data to send. If any data was prepared then it must be send to the broker. The `process` function shall be repeated untill it teturns the `MQTT_SUCCESS` reason code.
-- If the `process` function has returned other reason than `MQTT_PENDING_DATA`, an apropriate actions shall be take into account.
-
-All details were described on <a href="#fig01">Fig. 1</a>.
+The library is not exchanging packets via internet as well as it is not conscious of elapsed time, therefore the user shall support the library with these aspects. To achieve this the following elements shall be designed in the program flow:
+- The timer should be configured to generate an interrupt after a specified period of time, hereinafter referred to as `timeout`. If the `timeout` was detected then empty packet shall be presented to the `process` function as it was presented on <a href="#fig01">Fig. 1</a>.
+- If any data was received it shall be presented to the `process` function (<a href="#fig01">Fig. 1</a>).
+- If shall be checked if `process` function has prepared any data to send. If any data was prepared then it must be send to the broker. The `process` function shall be repeated until it returns the `MQTT_SUCCESS` reason code, hereinafter referred to as `rc`.
+- If the `process` function has returned other `rc` than `MQTT_PENDING_DATA`, then an appropriate actions shall be take into account.
 
 <p align="center">
   <a name="fig01"> 
@@ -30,15 +28,17 @@ All details were described on <a href="#fig01">Fig. 1</a>.
   </a>
 </p>
 
-### Initialisation
-The first step is to initialize the library.
+The following sections names corresponds to the lightblue actions presented on <a href="#fig01">Fig. 1</a>.
+
+### Initializing the library
+The first step is to initialize the library. It shall be performed as follows:
 ```C
 mqtt_cli cli;
 
 mqtt_cli_init( &cli );
 ```
-### Configuration
-The second step is to configure the library.
+### Configuring the library
+The second step is to configure the library:
 ```C
 const uint16_t timeout = 1;
 const uint32_t srv_ip = 0xC0A80201;
@@ -48,6 +48,7 @@ cli.set_timeout( &cli, timeout);
 cli.set_br_ip( &cli, srv_ip);
 cli.set_br_keepalive( &cli, keep_alive );
 ```
+### Processing the data
 ### Sending publish package
 ```C
 const char *topic = "sensor01";
@@ -65,16 +66,16 @@ params.topic = topic;
 cli.publish_ex( &cli, &params, &data);
 ```
 ### Sending subscribe package
-### Processing packages
-### Closing the library
+### Releasing the library resources
+To avoid memory leaks in the program, the library resources must be released if only they are not needed anymore.
 ```C
 mqtt_cli_destr( &cli );
 ```
 ## Examples
 | Link | Description |
 |------|-------------|
-|[mqtt.c](src/mqtt.c/README.md)| Demonstrates using publish and subscribe packets in MQTT protocol. Could be used as a diagnostic tool. |
-|[hadev.c](src/hadev.c/README.md)| Simulator of the Home Assistant device. It is using discovery process to automatically add the device. |
+|[mqtt.c](examples/mqtt.c/README.md)| Demonstrates using publish and subscribe packets in MQTT protocol. Could be used as a diagnostic tool. |
+|[hadev.c](examples/hadev.c/README.md)| Simulator of the Home Assistant device. It is using discovery process to automatically add the device. |
 
 ## References
 [^1]: [MQTT](https://mqtt.org)

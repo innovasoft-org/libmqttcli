@@ -73,7 +73,7 @@ int get_time(char* buf, int len)
   if(buf == NULL || len < 9)
   {
     TOLOG(LOG_ERR,"Invalid argument");
-    return RC_FAILURE;
+    return RESULT_FAILURE;
   }
 
   /* Get the current time */

@@ -10,9 +10,9 @@
 /** Program's version*/
 #define PROGRAM_VERSION   "1.0.0.0"
 
-#define RC_OK  (int) (0)
-#define RC_FAILURE  (int) (65536)
-#define RC_EXIT (int) (5)
+#define RESULT_OK         (int) (0)
+#define RESULT_FAILURE    (int) (65535)
+#define RESULT_EXIT       (int) (5)
 
 #define DEFAULT_IP    "127.0.0.1"
 #define DEFAULT_PORT  1884
