@@ -73,4 +73,4 @@ mqtt_cli_destr( &cli );
 |[hadev.c](src/hadev.c/README.md)| Simulator of the Home Assistant device. It is using discovery process to automatically add the device. |
 
 ## References
-[^1]: [MQTT](mqtt.org)
+[^1]: [MQTT](https://mqtt.org)
