@@ -11,7 +11,7 @@ start
 
 :Establishing TCP/IP connection;
 
-while(stopped?)
+while(stopped?) is (false)
 if(timer raised?) then (yes)
   :Setting empty data;
   repeat 
@@ -27,6 +27,7 @@ endif
 :Non-blocking receiving; <<Input>>
 
 if(data received?) then (yes)
+  :Setting the data;
   repeat 
     #lightblue:Processing the data;
     if(Result not equalt to MQTT_SUCCESS nor MQTT_PENDING_DATA?) then (yes)
