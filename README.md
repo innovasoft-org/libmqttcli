@@ -24,8 +24,10 @@ The library is not exchanging packets via internet as well as it is not consciou
 All details were described on <a href="#fig01">Fig. 1</a>.
 
 <p align="center">
+  <a name="fig01"> 
   <img src="doc/program_flow.svg" /> </br>
-  <a name="fig01"> <b>Fig. 1. Program flow. </b> </a>
+  <b>Fig. 1. Program flow. </b>
+  </a>
 </p>
 
 ### Initialisation
