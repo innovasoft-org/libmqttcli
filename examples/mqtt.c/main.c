@@ -20,36 +20,24 @@
 #include "utils.h"
 #include "../../api/mqtt_cli.h"
 
-const char* unique_id = "hadev123456";
-const char* base_topic = "homeassistant/switch/hadev123456";
-const char* command_topic = "set";
-const char* state_topic = "state";
-const char* availability_topic = "available";
-const char* payload_on = "ON";
-const char* payload_off = "OFF";
-const char* payload_available = "online";
-const char* payload_not_available = "offline";
-const char* state_on = "ON";
-const char* state_off = "OFF";
-
 /** Program context */
 static context_t ctx;
-
-/** Global buffer used to send and perform operations on the data */
-static clv_t* buffer;
-
-/* Stores current switch state (on or off) */
-static uint8_t toggle = 0;
 
 static struct option long_options[] = {
   {L_OPT_HOST,        required_argument,  0,  S_OPT_HOST},
   {L_OPT_PORT,        required_argument,  0,  S_OPT_PORT},
   {L_OPT_BUFFER_SIZE, required_argument,  0,  S_OPT_BUFFER_SIZE},
   {L_OPT_REUSE_ADDR,  required_argument,  0,  S_OPT_REUSE_ADDR},
+  {L_OPT_TOPIC,       required_argument,  0,  S_OPT_TOPIC},
+  {L_OPT_MESSAGE,     required_argument,  0,  S_OPT_MESSAGE},
   {L_OPT_USERID,      required_argument,  0,  S_OPT_USERID},
   {L_OPT_USERNAME,    required_argument,  0,  S_OPT_USERNAME},
   {L_OPT_PASSWORD,    required_argument,  0,  S_OPT_PASSWORD},
   {L_OPT_VERBOSE,     no_argument,        0,  S_OPT_VERBOSE},
+  {L_OPT_SUBSCRIBE,   no_argument,        0,  S_OPT_SUBSCRIBE},
+  {L_OPT_SUB,         no_argument,        0,  S_OPT_SUBSCRIBE},
+  {L_OPT_PUBLISH,     no_argument,        0,  S_OPT_PUBLISH},
+  {L_OPT_PUB,         no_argument,        0,  S_OPT_PUBLISH},
   {NULL,              no_argument,        0,  0}
 };
 
@@ -77,7 +65,7 @@ int validate_args(int argc, char **argv) {
 
   if(NULL == strstr(argv[0], PROGRAM_NAME)) {
     TOLOG(LOG_ERR,"Program name was changed to %s",argv[0]);
-    return RC_FAILURE;
+    return RESULT_FAILURE;
   }
 
   while( 1 ) {
@@ -108,6 +96,7 @@ int validate_args(int argc, char **argv) {
         break;
       case S_OPT_PASSWORD:
         length = strlen( optarg );
+        printf("length = %ld\r\n", length);
         if(length > sizeof(ctx.password) / sizeof(char) ) {
           TOLOG(LOG_ERR, "Invalid password length");
         }
@@ -129,22 +118,52 @@ int validate_args(int argc, char **argv) {
       case S_OPT_REUSE_ADDR:
         ctx.optval_reuse_addr = 1;
         break;
+      case S_OPT_SUBSCRIBE:
+        if(ctx.subscribe == 1 || ctx.publish == 1) {
+          TOLOG(LOG_ERR, "Invalid combination - subscribe and publish");
+          return RESULT_FAILURE;
+        }
+        ctx.subscribe = 1;
+        break;
+      case S_OPT_PUBLISH:
+        if(ctx.subscribe == 1 || ctx.publish == 1) {
+          TOLOG(LOG_ERR, "Invalid combination - subscribe and publish");
+          return RESULT_FAILURE;
+        }
+        ctx.publish = 1;
+        break;
+      case S_OPT_TOPIC:
+        length = strlen( optarg );
+        if( MIN_TOPIC_LEN > length || MAX_TOPIC_LEN < length ) {
+          TOLOG(LOG_ERR, "Invalid topic length");
+          return RESULT_FAILURE;
+        }
+        memcpy(ctx.topic, optarg, length);
+        break;
+      case S_OPT_MESSAGE:
+        length = strlen( optarg );
+        if( MIN_MESSAGE_LEN > length || MAX_MESSAGE_LEN < length ) {
+          TOLOG(LOG_ERR, "Invalid message length");
+          return RESULT_FAILURE;
+        }
+        memcpy(ctx.message, optarg, length);
+        break;
       case '?':
-        return RC_FAILURE;
+        return RESULT_FAILURE;
         break;
       default:
         exit(1);
     }
   }
 
-  if( ctx.username[0] == 0x00 ) {
-    TOLOG(LOG_ERR, "'--username' option required");
-    return RC_FAILURE;
+  if(ctx.publish && ( !ctx.topic[0] || !ctx.message[0] ) ) {
+    TOLOG(LOG_ERR, "publish option requires to specify topic and message");
+    return RESULT_FAILURE;
   }
 
-  if( ctx.password[0] == 0x00 ) {
-    TOLOG(LOG_ERR, "'--password' option required");
-    return RC_FAILURE;
+  if(ctx.subscribe && ( !ctx.topic[0] || ctx.message[0] ) ) {
+    TOLOG(LOG_ERR, "subscribe option requires to specify only the topic");
+    return RESULT_FAILURE;
   }
 
 	return RC_SUCCESS;
@@ -189,8 +208,12 @@ void usage(const char* program) {
   printf(" -%c password, --%s password\r\n\t%s\r\n",   S_OPT_PASSWORD,    L_OPT_PASSWORD,      "Sets password used during CONNECT packet creation.");
   printf(" -%c size, --%s size\r\n\t%s\r\n",           S_OPT_BUFFER_SIZE, L_OPT_BUFFER_SIZE,   "Sets buffer size, which is dynamically allocated.");
   printf(" -%c host_name, --%s host_name\r\n\t%s\r\n", S_OPT_HOST,        L_OPT_HOST,          "Sets remote host name or IP address.");
+  printf(" -%c message, --%s message\r\n\t%s\r\n",     S_OPT_MESSAGE,     L_OPT_MESSAGE,       "Sets the message used during PUBLISH packet creation.");
   printf(" -%c port, --%s port\r\n\t%s\r\n",           S_OPT_PORT,        L_OPT_PORT,          "Sets the remote port to be used.");
+  printf(" -%c topic, --%s topic\r\n\t%s\r\n",         S_OPT_TOPIC,       L_OPT_TOPIC,         "Sets the topic used during PUBLISH or SUBSCRIBE packets creation.");
   printf(" -%c, --%s\r\n\t%s\r\n",                     S_OPT_VERBOSE,     L_OPT_VERBOSE,       "Runs the program in verbose mode.");
+  printf(" --%s\r\n\t%s\r\n",                          L_OPT_PUBLISH,                          "Runs the program to publish the packet.");
+  printf(" --%s\r\n\t%s\r\n",                          L_OPT_SUBSCRIBE,                        "Runs the program to subscribe packets.");
   printf(" --%s\r\n\t%s\r\n",                          L_OPT_REUSE_ADDR,                       "Turns on to reuse the the address.");
 	printf("\r\n");
 }
@@ -200,8 +223,10 @@ void show_info() {
     return;
   }
 
-  printf("Home Assistant Device Simulator (c) 2024\r\n");
+  printf("MQTT client (c) 2023\r\n");
   printf("\r\n");
+  printf("         IP: %s\r\n", ctx.ip);
+  printf("       Port: %d\r\n", ctx.port);
 }
 
 void log_write(int level, char* filename, int line, char *fmt,...) {
@@ -274,14 +299,14 @@ void log_write(int level, char* filename, int line, char *fmt,...) {
 int send_data(int sock, uint8_t *buf, size_t *length, uint8_t *log_str, size_t log_str_len) {
   fd_set writefds;
   struct timeval tv;
-  int rc;
+  int result = RESULT_OK;
   size_t send_len;
 
   tv.tv_sec = 0;
 	tv.tv_usec = 0;
 
   if(*length == 0) {
-    return RC_SUCCESS;
+    return RESULT_OK;
   }
 
   /* Prepare the read and write socket sets for network I/O notification */
@@ -290,18 +315,18 @@ int send_data(int sock, uint8_t *buf, size_t *length, uint8_t *log_str, size_t l
   FD_SET(sock, &writefds);
 
   /* Wait until data could be send or timeout will raised */
-  if( -1 == (rc = select( sock+1, NULL, &writefds, NULL, &tv)) ) {
+  if( -1 == (result = select( sock+1, NULL, &writefds, NULL, &tv)) ) {
     if(EINTR == errno ) {
-      return RC_EXIT;
+      return RESULT_EXIT;
     }
     else {
       TOLOG(LOG_ERR,"select( ... ), errno = %d", errno);
-       return RC_FAILURE;
+       return RESULT_FAILURE;
     }
   }
-  else if(rc == 0) {
+  else if(result == 0) {
     /* timeout */
-    return RC_FAILURE;
+    return RESULT_FAILURE;
   }
 
   /* Check if send could be performed */
@@ -309,10 +334,10 @@ int send_data(int sock, uint8_t *buf, size_t *length, uint8_t *log_str, size_t l
     if( -1 == (send_len = send(sock, buf, *length, 0))) {
       if(errno == ECONNRESET) {
         TOLOG(LOG_INFO,"Connection reset");
-        return RC_EXIT;
+        return RESULT_EXIT;
       }
       TOLOG(LOG_WARNING,"send( ... ), errno = %d", errno);
-      return RC_FAILURE;
+      return RESULT_FAILURE;
     }
     if(ctx.verbose) {
       memset(log_str, 0x00, log_str_len);
@@ -323,146 +348,113 @@ int send_data(int sock, uint8_t *buf, size_t *length, uint8_t *log_str, size_t l
     }
   }
 
-  return RC_SUCCESS;
+  return RESULT_OK;
 }
 
 int process_and_send_data(int sock, mqtt_cli_t *cli, clv_t *data, mqtt_channel_t *channel, uint8_t *log_str, size_t log_str_len) {
   fd_set writefds;
   struct timeval tv;
-  int rc;
+  int result = RESULT_OK;
+  uint16_t rc;
   size_t send_len;
 
   tv.tv_sec = 0;
 	tv.tv_usec = 5000;
 
   /* Processing and sending */
-  while( 1 ) {
+  do {
     rc = cli->process( cli, data, channel);
     if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
       TOLOG(LOG_ERR, "process( ... ), rc = %d", rc);
+      result = RESULT_FAILURE;
       break;
     }
 
-    if( !data->length ) {
-      /* there is nothing to send */
-      break;
+    if( data->length ) {
+      if( (result = send_data(sock, data->value, &(data->length), log_str, log_str_len)) != RESULT_OK) {
+        break;
+      }
     }
 
-    if( (rc = send_data(sock, data->value, &(data->length), log_str, log_str_len)) < 0) {
-      return rc;
-    }
+    data->length = 0;
+  } while( rc == MQTT_PENDING_DATA ); /* Processing and sending */
 
-    if(rc == MQTT_PENDING_DATA) {
-      continue;
-    }
+  return result;
+}
 
-    break;
-  } /* Processing and sending */
+mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
+  uint8_t properties[] = {0x26, 0x00, 0x01, 'n', 0x00, 0x01, 'v'};
+  lv_t PROPERTIES = {.length=sizeof(properties)/sizeof(uint8_t), .value=properties };
+  mqtt_publish_params_t publish_params;
+  mqtt_subscribe_params_t subscribe_params;
+
+  if(ctx.publish == 1) {
+    publish_params.flags = 0x02;
+    publish_params.message = (lv_t) {.length=strlen(ctx.message), .value=ctx.message };
+    publish_params.properties = PROPERTIES;
+    publish_params.topic = (lv_t) {.length=strlen(ctx.topic), .value=ctx.topic };
+    self->publish(self, &publish_params);
+  }
+  
+  if(ctx.subscribe == 1) {
+    subscribe_params.filter = (mqtt_subscribe_filter_t) {.length=strlen(ctx.topic), .options=1, .value=ctx.topic, };
+    subscribe_params.properties = (lv_t) {.length=0, .value=NULL };
+    self->subscribe(self, &subscribe_params);
+  }
 
   return RC_SUCCESS;
 }
 
-mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
-  mqtt_rc_t rc = RC_SUCCESS;
-  uint8_t *message;
-  int offset;
-  mqtt_publish_params_t publish_params = { };
-  mqtt_subscribe_params_t subscribe_params = { };
-
-  /* Publishing configuration */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/config", base_topic );
-  message = publish_params.message.value = buffer->value + publish_params.topic.length;
-  offset = 0;
-  message[0] = '{';
-  offset += 1;
-  offset += sprintf( message + offset, "\"~\": \"%s\",", base_topic );
-  offset += sprintf( message + offset, "\"name\": null,");
-  offset += sprintf( message + offset, "\"uniq_id\": \"%s\",", unique_id);
-  offset += sprintf( message + offset, "\"cmd_t\": \"~/%s\",", command_topic);
-  offset += sprintf( message + offset, "\"stat_t\": \"~/%s\",", state_topic);
-  offset += sprintf( message + offset, "\"avty_t\": \"~/%s\",", availability_topic);
-  offset += sprintf( message + offset, "\"schema\": \"json\",");
-  offset += sprintf( message + offset, "\"pl_on\": \"%s\",", payload_on);
-  offset += sprintf( message + offset, "\"pl_off\": \"%s\",", payload_off);
-  offset += sprintf( message + offset, "\"pl_avail\" : \"%s\",", payload_available);
-  offset += sprintf( message + offset, "\"pl_not_avail\": \"%s\",", payload_not_available);
-  offset += sprintf( message + offset, "\"stat_on\": \"%s\",", state_on);
-  offset += sprintf( message + offset, "\"stat_off\": \"%s\",", state_off);
-  offset += sprintf( message + offset, "\"ret\": \"true\",");
-  offset += sprintf( message + offset, "\"opt\": \"false\",");
-  offset += sprintf( message + offset, "\"dev\": {\"ids\": \"ea334450945afc\",\"name\": \"acme_dev\",\"mf\": \"ACME\",\"mdl\": \"xya\",\"sw\": \"1.0\",\"sn\": \"ea334450945afc\",\"hw\": \"1.0rev2\"},");
-  offset += sprintf( message + offset, "\"o\": {\"name\":\"mqttcli\",\"sw\": \"1.0\",\"url\": \"https://innovasoft.org\"}");
-  offset += sprintf( message + offset, "}");
-  publish_params.message.length = offset;
-  if( MQTT_SUCCESS != self->publish(self, &publish_params) ) {
-    rc =  RC_IMPL_SPEC_ERR;
-    goto finish;   
-  }
-
-  /* Publishing current device availability */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, availability_topic );
-  message = publish_params.message.value = buffer->value + publish_params.topic.length;
-  publish_params.message.length = sprintf( message, "%s", payload_available );
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    rc =  RC_IMPL_SPEC_ERR;
-    goto finish;   
-  }
-
-  /* Publishing current device state */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, state_topic );
-  message = publish_params.message.value = buffer->value + publish_params.topic.length;
-  publish_params.message.length = sprintf( message, "%s", ( toggle > 0 ) ? state_on : state_off );
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    rc =  RC_IMPL_SPEC_ERR;
-    goto finish;   
-  }
-
-  /* Subscribing to receive commands */
-  subscribe_params.filter.value = buffer->value;
-  subscribe_params.filter.length = sprintf( buffer->value, "%s/%s", base_topic, command_topic );
-  if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
-    rc =  RC_IMPL_SPEC_ERR;
-    goto finish;   
-  }
-
-finish:
-  return rc;
-}
-
 mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
-  mqtt_rc_t rc = RC_SUCCESS;
-  mqtt_publish_params_t publish_params = { };
+  int i;
+  uint8_t c;
+  uint8_t *topic = ctx.topic;
+  uint8_t *message = ctx.message;
   size_t offset;
 
-  /* Updating device internal state */
-  if(pkt->message.length == strlen(payload_on) && 0 == memcmp( pkt->message.value, payload_on, pkt->message.length) ) {
-    toggle = 1;
-  }
-  else if(pkt->message.length == strlen(payload_off) && 0 == memcmp( pkt->message.value, payload_off, pkt->message.length) ) {
-    toggle = 0;
-  }
-
-  /* Publishing current state */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, state_topic );
-  publish_params.message = pkt->message;
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    rc =  RC_IMPL_SPEC_ERR;
+  if( topic[0] || message[0]) {
+    topic[0] = 0;
+    message[0] = 0;
+    sleep(1);
+    return RC_SUCCESS;
   }
 
-  return rc;
+  /* Save received topic, it will be displayed in main function */
+  offset = 0;
+  for(i=0; i<pkt->topic.length; ++i) {
+    c = pkt->topic.value[i];
+    if( isprint( c )) {
+      offset += sprintf( topic + offset, "%c", c);
+    }
+    else {
+      offset += sprintf( topic + offset, ".");
+    }
+  }
+  sprintf( topic + offset, "\0");
+
+  /* Save received message, it will be displayed in main function */
+  offset = 0;
+  for(i=0; i<pkt->message.length; ++i) {
+    c = pkt->message.value[i];
+    if( isprint( c )) {
+      offset += sprintf( message + offset, "%c", c);
+    }
+    else {
+      offset += sprintf( message + offset, ".");
+    }
+  }
+  sprintf( message + offset, "\0");
+
+  return RC_SUCCESS;
 }
 
 int main(int argc, char** argv) {
-  int sock;
+  uint8_t *send_buf = NULL, *recv_buf = NULL;
+  uint16_t rc;
   uint32_t srv_ip;
-  uint8_t *recv_buf = NULL, *tmp_buf = NULL;
-  size_t length, recv_buf_len, recv_buf_off, recv_len, i;
+  size_t length, recv_buf_len, recv_buf_off, send_buf_len, recv_len, i;
   char *log_str = NULL, c;
-  int rc, optval, ret, log_str_len;
+  int result, optval, ret, log_str_len, sock;
   struct sigaction sa;
   struct sockaddr_in server;
   struct hostent *host = NULL;
@@ -473,8 +465,8 @@ int main(int argc, char** argv) {
   struct itimerval timer;
   time_t now;
   lv_t packet, cli_userid, cli_username, cli_password;
-  mqtt_publish_params_t publish_params = {  };
-  mqtt_will_params_t will_params = (mqtt_will_params_t) { };
+  mqtt_publish_params_t publish_params;
+  mqtt_subscribe_params_t subscribe_params;
 
   /* Initialize */
   memset( &cli, 0x00, sizeof(cli));
@@ -482,40 +474,35 @@ int main(int argc, char** argv) {
   /* Validate arguments */
   if(validate_args(argc, argv)) {
     usage(argv[0]);
-    rc = RC_FAILURE;
+    result = RESULT_FAILURE;
+    TOLOG(LOG_ERR, "test");
     goto finish;
   }
 
   show_info();
 
-  if( NULL == (buffer = (clv_t*) malloc( sizeof(clv_t) ) ) ) {
+  if( NULL == (send_buf = (unsigned char*) malloc (ctx.buffer_size ))) {
     TOLOG(LOG_CRIT, "Not enough memory");
-    rc = RC_FAILURE;
+    result = RESULT_FAILURE;
     goto finish;
   }
-
-  if( NULL == (tmp_buf = malloc( ctx.buffer_size ) ) ) {
-    TOLOG(LOG_CRIT, "Not enough memory");
-    rc = RC_FAILURE;
-    goto finish;
-  }
-
-  memcpy( buffer, &(clv_t) { .capacity=ctx.buffer_size, .length=0, .value=tmp_buf }, sizeof(clv_t) );
+  send_buf_len = ctx.buffer_size;
 
   if( NULL == (recv_buf = (unsigned char*) malloc (ctx.buffer_size ))) {
     TOLOG(LOG_CRIT, "Not enough memory");
-    rc = RC_FAILURE;
+    result = RESULT_FAILURE;
     goto finish;
   }
   recv_buf_len = ctx.buffer_size;
-  memset( recv_buf, 0x00, recv_buf_len );
 
   log_str_len = 2*ctx.buffer_size + ctx.buffer_size;
   if( NULL == (log_str = (unsigned char*) malloc ( log_str_len ))) {
     TOLOG(LOG_CRIT, "Not enough memory");
-    rc = RC_FAILURE;
+    result = RESULT_FAILURE;
     goto finish;
   }
+
+  clv_t data = {.capacity=send_buf_len, .value=send_buf};
 
   /* Configure signal_handler as the signal handler for SIGALRM */
   memset (&sa, 0, sizeof (sa));
@@ -528,7 +515,7 @@ int main(int argc, char** argv) {
   /* Create the TCP/IP socket */
 	if( -1 == (sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))) {
 		TOLOG(LOG_CRIT, "socket(AF_INET, SOCK_STREAM, IPPROTO_TCP), errno = %d", errno);
-		rc = RC_FAILURE;
+		result = RESULT_FAILURE;
     goto finish;
 	}
 
@@ -541,7 +528,7 @@ int main(int argc, char** argv) {
     host = gethostbyname( ctx.ip );
     if(host == NULL) {
       TOLOG(LOG_ERR, "Server name resolving was impossible, errno = %d", errno);
-      rc = RC_FAILURE;
+      result = RESULT_FAILURE;
       goto finish;
     }
     memcpy( &server.sin_addr, host->h_addr_list[0], host->h_length );
@@ -564,7 +551,7 @@ int main(int argc, char** argv) {
   	/* Enable to reuse address */
     if( -1 == setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &ctx.optval_reuse_addr, sizeof(ctx.optval_reuse_addr))) {
       TOLOG(LOG_ERR,"setsockopt(...,SOL_SOCKET,SO_REUSEADDR,...), errno = %d", errno);
-      rc = RC_FAILURE;
+      result = RESULT_FAILURE;
       goto finish;
     }
   }
@@ -575,7 +562,7 @@ int main(int argc, char** argv) {
   }
   if( MQTT_SUCCESS != (rc = mqtt_cli_init( &cli )) ) {
     TOLOG(LOG_ERR,"mqtt_cli_init( ... ), rc = %d", rc);
-    rc = RC_FAILURE;
+    result = RESULT_FAILURE;
     goto finish;    
   }
   if(ctx.verbose) {
@@ -586,44 +573,37 @@ int main(int argc, char** argv) {
   if(ctx.verbose) {
     printf("Configuring MQTT client...");
   }
+  if( !ctx.verbose && ctx.subscribe ) {
+    cli.set_cb_publish( &cli, cb_publish );
+  }
   cli.set_cb_connack( &cli, cb_connack );
-  cli.set_cb_publish( &cli, cb_publish );
   cli.set_br_ip( &cli, srv_ip);
   cli.set_timeout( &cli, (uint16_t) ctx.timeout);
   cli.set_br_keepalive( &cli, (uint16_t) 60);
-  will_params.topic.value = buffer->value;
-  will_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, availability_topic );
-  will_params.payload.value = buffer->value + will_params.topic.length;
-  will_params.payload.length = sprintf( buffer->value + will_params.topic.length, "%s", payload_not_available );
-  if( MQTT_SUCCESS != (rc = cli.set_br_will( &cli, &will_params) ) ) {
-    TOLOG(LOG_ERR,"cli.set_br_will( ... ), rc = %d", rc);
-    rc = RC_FAILURE;
-    goto finish;
-  }
   if(ctx.userid[0] == 0) {
     now = time(NULL);
-    ctx.userid[0] = 'U';
+    ctx.userid[0] = ctx.publish == 1 ? 'p' : 's';
     strftime(&(ctx.userid[1]), sizeof(ctx.userid)-1, "%Y%m%d%H%M%S", localtime(&now));
   }
   cli_userid.length = strlen( ctx.userid );
   cli_userid.value = ctx.userid;
   if( MQTT_SUCCESS != (rc = cli.set_br_userid( &cli, &cli_userid )) ) {
     TOLOG(LOG_ERR,"cli.set_br_userid( ... ), rc = %d", rc);
-    rc = RC_FAILURE;
+    result = RESULT_FAILURE;
     goto finish;
   }
   cli_username.length = strlen (ctx.username);
   cli_username.value = ctx.username;
-  if( MQTT_SUCCESS != (rc = cli.set_br_username( &cli, &cli_username )) ) {
+  if( cli_username.length && MQTT_SUCCESS != (rc = cli.set_br_username( &cli, &cli_username )) ) {
     TOLOG(LOG_ERR,"cli.set_br_username( ... ), rc = %d", rc);
-    rc = RC_FAILURE;
+    result = RESULT_FAILURE;
     goto finish;   
   }
   cli_password.length = strlen(ctx.password);
   cli_password.value = ctx.password;
-  if( MQTT_SUCCESS != (rc = cli.set_br_password( &cli, &cli_password )) ) {
+  if( cli_password.length && MQTT_SUCCESS != (rc = cli.set_br_password( &cli, &cli_password )) ) {
     TOLOG(LOG_ERR,"cli.set_br_password( ... ), rc = %d", rc);
-    rc = RC_FAILURE;
+    result = RESULT_FAILURE;
     goto finish;   
   }
   if(ctx.verbose) {
@@ -636,7 +616,7 @@ int main(int argc, char** argv) {
   }
   if( -1 == connect(sock, (struct sockaddr*)&server, sizeof(server) ) ) {
     TOLOG(LOG_ERR,"connect( ... ), errno = %d", errno);
-    rc = RC_FAILURE;
+    result = RESULT_FAILURE;
     goto finish;
   }
   if(ctx.verbose) {
@@ -646,7 +626,7 @@ int main(int argc, char** argv) {
   /* Start non-blocking mode */
   if( -1 == ioctl(sock, FIONBIO, (char*) &ctx.non_blocking) ) {
     TOLOG(LOG_ERR,"ioctl(sock, FIONBIO, ... ), errno = %d", errno);
-    rc = RC_FAILURE;
+    result = RESULT_FAILURE;
     goto finish;
   }
 
@@ -670,59 +650,44 @@ int main(int argc, char** argv) {
 	tv.tv_sec = 0;
 	tv.tv_usec = 0;
   recv_buf_off = 0;
-  while( 1 == ctx.state ) {
+  while( ctx.state ) {
+    /* Printing received and saved topic and message (if any) */
+    if( ctx.subscribe == 2 && ctx.topic[0] && ctx.message[0]) {
+      printf("%s: %s\r\n", ctx.topic, ctx.message);
+      ctx.topic[0] = 0;
+      ctx.message[0] = 0;
+    }
     /* Processing timeout (if any) */
-    if( ctx.timer_int ) {
+    if(ctx.timer_int) {
       ctx.timer_int = 0;
       channel.ip_address = 0;
       channel.user_id = 0;
-      buffer->length = 0;
-      rc = process_and_send_data(sock, &cli, buffer, &channel, log_str, log_str_len);
-      if(rc == RC_FAILURE) {
+      data.length = 0;
+      result = process_and_send_data(sock, &cli, &data, &channel, log_str, log_str_len);
+      if(result == RESULT_FAILURE) {
         TOLOG(LOG_ERR, "Sending failed");
         break;
       }
-      else if(rc == RC_EXIT) {
+      else if(result == RESULT_EXIT) {
         TOLOG(LOG_ERR, "Connection closed");
         break;
       }    
     }
-    /* Prepare the read stdin (fd = 0) sets for network I/O notification */
-    FD_ZERO(&readfds);
-    /* Set read notification for the socket */
-    FD_SET(0, &readfds);	  /* Wait until the socket has data ready to be read (until timeout occurs) */
-	  if( -1 == (rc = select( 1, &readfds, NULL, NULL, &tv)) ) {
-      if(EINTR == errno ) {
-        continue;
-      }
-		  TOLOG(LOG_ERR,"select( ... ), errno = %d", errno);
-      rc = RC_FAILURE;
-      goto finish;
-	  }
-    if(rc && FD_ISSET(0, &readfds) && 0x20 == getchar()) {
-      publish_params.topic.value = buffer->value;
-      publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, state_topic);
-      publish_params.message.value = buffer->value + publish_params.topic.length;
-      toggle = (toggle > 0) ? 0 : 1;
-      publish_params.message.length = sprintf( buffer->value + publish_params.topic.length, "%s", ( toggle > 0 ) ? state_on : state_off);
-      cli.publish( &cli, &publish_params);
-    }
-
     /* Prepare the read socket sets for network I/O notification */
     FD_ZERO(&readfds);
     /* Set read notification for the socket */
     FD_SET(sock, &readfds);
 	  /* Wait until the socket has data ready to be read (until timeout occurs) */
-	  if( -1 == (rc = select( sock+1, &readfds, NULL, NULL, &tv)) ) {
+	  if( -1 == (result = select( sock+1, &readfds, NULL, NULL, &tv)) ) {
       if(EINTR == errno ) {
         continue;
       }
 		  TOLOG(LOG_ERR,"select( ... ), errno = %d", errno);
-      rc = RC_FAILURE;
+      result = RESULT_FAILURE;
       goto finish;
 	  }
     /* Check if timeout has occurred */
-    if( rc == 0 ) {
+    if( result == 0 ) {
       /* do nothing */
       ;
     }
@@ -764,14 +729,14 @@ int main(int argc, char** argv) {
         cli.get_pkt_length(&cli, &packet, &length);
 
         if( recv_buf_off >= length) {
-          memcpy( buffer->value, recv_buf, length);
+          memcpy( send_buf, recv_buf, length);
           memmove( recv_buf, recv_buf+length, recv_buf_off - length);
           recv_buf_off -= length;
           recv_buf_len += length;
 
           if(ctx.verbose) {
             memset(log_str, 0x00, log_str_len);
-            format_data(buffer->value, length, log_str, log_str_len);
+            format_data(send_buf, length, log_str, log_str_len);
             log_str[1] = '=';
             log_str[2] = '>';
             printf("%s\r\n", log_str);
@@ -779,13 +744,13 @@ int main(int argc, char** argv) {
 
           channel.ip_address = srv_ip;
           channel.user_id = 0;
-          buffer->length = length;
-          rc = process_and_send_data(sock, &cli, buffer, &channel, log_str, log_str_len);
-          if(rc == RC_FAILURE) {
+          data.length = length;
+          result = process_and_send_data(sock, &cli, &data, &channel, log_str, log_str_len);
+          if(result == RESULT_FAILURE) {
             TOLOG(LOG_ERR, "Sending failed");
             break;
           }
-          else if(rc == RC_EXIT) {
+          else if(result == RESULT_EXIT) {
             TOLOG(LOG_ERR, "Connection closed");
             break;
           }
@@ -799,7 +764,7 @@ int main(int argc, char** argv) {
 
   /* Exit the program */
   printf("\r\nStopped!\r\n");
-  rc = RC_SUCCESS;
+  result = RESULT_OK;
 
 finish:
   /* Close the socket if necessary */
@@ -812,16 +777,12 @@ finish:
   if(NULL != recv_buf) {
     free( recv_buf );
   }
-  if(NULL != buffer->value) {
-    free( buffer->value );
-  }
-  if( NULL != buffer) {
-    free( buffer );
-    buffer = NULL;
+  if(NULL != send_buf) {
+    free( send_buf );
   }
   /* Destroy client */
   if( NULL != cli.ctx) {
     mqtt_cli_destr( &cli );
   }
-  return rc;
+  return result;
 }
