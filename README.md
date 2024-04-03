@@ -23,14 +23,14 @@ The library is not exchanging packets via internet as well as it is not consciou
 
 ### Initialisation
 The first step is to initialize the library.
-```
+```C
 mqtt_cli cli;
 
 mqtt_cli_init( &cli );
 ```
 ### Configuration
 The second step is to configure the library.
-```
+```C
 const uint16_t timeout = 1;
 const uint32_t srv_ip = 0xC0A80201;
 const uint16_t keep_alive = 60;
@@ -40,7 +40,7 @@ cli.set_br_ip( &cli, srv_ip);
 cli.set_br_keepalive( &cli, keep_alive );
 ```
 ### Sending publish package
-```
+```C
 const char *topic = "sensor01";
 const char *message = "ON";
 uint8_t buffer[1024] = { 0 };
@@ -58,7 +58,7 @@ cli.publish_ex( &cli, &params, &data);
 ### Sending subscribe package
 ### Processing packages
 ### Closing the library
-```
+```C
 mqtt_cli_destr( &cli );
 ```
 ## Examples
