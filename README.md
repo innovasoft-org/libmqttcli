@@ -1,10 +1,13 @@
 # MQTT Client Library
 ## Trademarks
 All referenced product or service names and trademarks are the property of their respective owners.
+| Trademark | Description |
+|------|-------------|
+| MQTT | MQTT is an OASIS standard messaging protocol for the Internet of Things (IoT). It is designed as an extremely lightweight publish/subscribe messaging transport that is ideal for connecting remote devices with a small code footprint and minimal network bandwidth. MQTT today is used in a wide variety of industries, such as automotive, manufacturing, telecommunications, oil and gas, etc. [^1] |
 ## Introduction
 The aim of this repo is to demonstrate possibilities as well as usage of the `libmqttcli.a` library.
 ## Features
-- Supports the client side of the MQTT protocol.
+- Supports the client side of the MQTT [^1] protocol.
 - Is relatively easy to use. The user does not need to know details of the MQTT protocol. The library automatically prepares the following packets: `CONNECT`, `AUTH`, `DISCONNECT`, `PUBACK` and `PINGREQ`. The user via library interface is allowed to prepare the following packets: `PUBLISH`, `SUBSCRIBE` and `DISCONNECT`.
 - The whole library contains proprietary implementation. There are no third party implementations included. The following external standard functions are used: `malloc`, `memcpy` and `memcmp`.
 - The library is totally written in C89 standard.
@@ -68,3 +71,6 @@ mqtt_cli_destr( &cli );
 |------|-------------|
 |[mqtt.c](src/mqtt.c/README.md)| Demonstrates using publish and subscribe packets in MQTT protocol. Could be used as a diagnostic tool. |
 |[hadev.c](src/hadev.c/README.md)| Simulator of the Home Assistant device. It is using discovery process to automatically add the device. |
+
+## References
+[^1]: [MQTT](mqtt.org)
