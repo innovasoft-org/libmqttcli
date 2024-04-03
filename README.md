@@ -1,4 +1,6 @@
 # MQTT Client Library
+## Trademarks
+All referenced product or service names and trademarks are the property of their respective owners.
 ## Introduction
 The aim of this repo is to demonstrate possibilities as well as usage of the `libmqttcli.a` library.
 ## Features
