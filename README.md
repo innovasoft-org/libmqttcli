@@ -12,7 +12,7 @@ The aim of this repo is to demonstrate possibilities as well as usage of the `li
 - Supports the client side of the MQTT [^1] protocol.
 - Is relatively easy to use. The user does not need to know details of the MQTT protocol. The library automatically prepares the following packets: `CONNECT`, `AUTH`, `DISCONNECT`, `PUBACK` and `PINGREQ`. The user via library interface is allowed to prepare the following packets: `PUBLISH`, `SUBSCRIBE` and `DISCONNECT`.
 - The whole library contains proprietary implementation. There are no third party implementations included. The following external standard functions are used: `malloc`, `memcpy` and `memcmp`.
-- The library is totally written in C89 standard.
+- The library is totally written in C89[^4] standard.
 - The library does not establish any internet connection. Received or prepared packets shall be exchanged by the user.
 - Specific behavior could be added using callback functions, e.g., client authentication to the broker.
 ## Usage
@@ -83,3 +83,4 @@ mqtt_cli_destr( &cli );
 [^1]: [https://mqtt.org](https://mqtt.org)
 [^2]: [https://plantuml.com](https://plantuml.com)
 [^3]: [https://www.home-assistant.io](https://www.home-assistant.io)
+[^4]: [https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf](https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf)
