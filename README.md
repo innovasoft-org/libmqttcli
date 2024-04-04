@@ -4,6 +4,7 @@ All referenced product or service names and trademarks are the property of their
 | Trademark | Description |
 |------|-------------|
 | MQTT | MQTT is an OASIS standard messaging protocol for the Internet of Things (IoT). It is designed as an extremely lightweight publish/subscribe messaging transport that is ideal for connecting remote devices with a small code footprint and minimal network bandwidth. MQTT today is used in a wide variety of industries, such as automotive, manufacturing, telecommunications, oil and gas, etc. [^1] |
+| PlantUML | PlantUML is a versatile component that enables swift and straightforward diagram creation. Users can draft a variety of diagrams using a simple and intuitive language.[^2]|
 ## Introduction
 The aim of this repo is to demonstrate possibilities as well as usage of the `libmqttcli.a` library.
 ## Features
@@ -24,7 +25,7 @@ The library is not exchanging packets via internet as well as it is not consciou
 <p align="center">
   <a name="fig01"> 
   <img src="doc/program_flow.svg" /> </br>
-  <b>Fig. 1. Program flow. </b>
+  <b>Fig. 1. Program flow (generated with PlantUML). </b>
   </a>
 </p>
 
@@ -79,3 +80,4 @@ mqtt_cli_destr( &cli );
 
 ## References
 [^1]: [MQTT](https://mqtt.org)
+[^2]: [PlantUML](https://plantuml.com)
