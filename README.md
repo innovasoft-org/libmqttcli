@@ -49,7 +49,7 @@ cli.set_br_ip( &cli, srv_ip);
 cli.set_br_keepalive( &cli, keep_alive );
 ```
 ### Processing the data
-### Sending publish package
+### Preparing *PUBLISH* package
 ```C
 const char *topic = "sensor01";
 const char *message = "ON";
@@ -65,7 +65,7 @@ params.properties.value = NULL;
 params.topic = topic;
 cli.publish_ex( &cli, &params, &data);
 ```
-### Sending subscribe package
+### Preparing *SUBSCRIBE* package
 ### Releasing the library resources
 To avoid memory leaks in the program, the library resources must be released if only they are not needed anymore.
 ```C
