@@ -77,7 +77,7 @@ mqtt_cli_destr( &cli );
 | Link | Description |
 |------|-------------|
 |[mqtt.c](examples/mqtt.c/README.md)| Demonstrates using publish and subscribe packets in MQTT protocol. Could be used as a diagnostic tool. |
-|[hadev.c](examples/hadev.c/README.md)| Simulator of the Home Assistant device. It is supporting discovery process to automatically add the device in Home Assistant board. |
+|[hadev.c](examples/hadev.c/README.md)| Simulator of the Home Assistant [^3] device. It is supporting discovery process to automatically add the device in Home Assistant board. |
 
 ## References
 [^1]: [https://mqtt.org](https://mqtt.org)
