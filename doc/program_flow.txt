@@ -11,33 +11,53 @@ start
 
 :Establishing TCP/IP connection;
 
-while(stopped?) is (false)
-if(timer raised?) then (yes)
-  :Setting empty data;
-  repeat 
-    #lightblue:Processing the data;
-    if(Result not equalt to MQTT_SUCCESS nor MQTT_PENDING_DATA?) then (yes)
-      :Error processing;
-    else if(data not empty?) then (yes)
-      :Non-blocking sending;<<Output>>
-    endif
-  repeat while(Result equal to MQTT_PENDING_DATA?)
-endif
+while(stop?) is (false)
+  if(timer raised?) then (yes)
+    :Setting empty data;
+    repeat
+      #lightblue:Processing the data;
+      if(//rc// **NE** (//MQTT_SUCCESS// **and** //MQTT_PENDING_DATA//)?) then (yes)
+        :Error processing;
+      else (no)
+        if(data not empty?) then (yes)
+          :Non-blocking sending;<<Output>>
+        else (no)
+        endif
+      endif
+    repeat while(//rc// **EQ** //MQTT_PENDING_DATA//?)
+  else (no)
+  endif
 
-:Non-blocking receiving; <<Input>>
+  :Non-blocking receiving; <<Input>>
 
-if(data received?) then (yes)
-  :Setting the data;
-  repeat 
-    #lightblue:Processing the data;
-    if(Result not equalt to MQTT_SUCCESS nor MQTT_PENDING_DATA?) then (yes)
-      :Error processing;
-    else if(data not empty?) then (yes)
-      :Non-blocking sending;<<Output>>
-    endif
-  repeat while(Result equal to MQTT_PENDING_DATA?)
-endif
-endwhile
+  if(data received?) then (yes)
+    :Setting the data;
+    repeat 
+      #lightblue:Processing the data;
+      if(//rc// **NE** (//MQTT_SUCCESS// **and** MQTT_PENDING_DATA)?) then (yes)
+        :Error processing;
+      else (no)
+        if(data not empty?) then (yes)
+          :Non-blocking sending;<<Output>>
+        else (no)
+        endif
+      endif
+    repeat while(//rc// **EQ** //MQTT_PENDING_DATA//?)
+  else (no)
+  endif
+
+  if(subscribe?) then (yes)
+    #lightblue:Preparing //SUBSCRIBE// packet;
+    :Non-blocking sending;<<Output>>
+  else (no)
+  endif
+
+  if(publish?) then (yes)
+    #lightblue:Preparing //PUBLISH// packet;
+    :Non-blocking sending;<<Output>>
+  else (no)
+  endif
+endwhile (true)
 
 #lightblue:Releasing the library resources;
 
