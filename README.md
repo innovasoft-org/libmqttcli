@@ -5,6 +5,7 @@ All referenced product or service names and trademarks are the property of their
 |------|-------------|
 | MQTT | MQTT is an OASIS standard messaging protocol for the Internet of Things (IoT). It is designed as an extremely lightweight publish/subscribe messaging transport that is ideal for connecting remote devices with a small code footprint and minimal network bandwidth. MQTT today is used in a wide variety of industries, such as automotive, manufacturing, telecommunications, oil and gas, etc. [^1] |
 | PlantUML | PlantUML is a versatile component that enables swift and straightforward diagram creation. Users can draft a variety of diagrams using a simple and intuitive language.[^2]|
+| Home Assistant| Open source home automation that puts local control and privacy first. Powered by a worldwide community of tinkerers and DIY enthusiasts. Perfect to run on a Raspberry Pi or a local server.[^3] |
 ## Introduction
 The aim of this repo is to demonstrate possibilities as well as usage of the `libmqttcli.a` library.
 ## Features
@@ -76,8 +77,9 @@ mqtt_cli_destr( &cli );
 | Link | Description |
 |------|-------------|
 |[mqtt.c](examples/mqtt.c/README.md)| Demonstrates using publish and subscribe packets in MQTT protocol. Could be used as a diagnostic tool. |
-|[hadev.c](examples/hadev.c/README.md)| Simulator of the Home Assistant device. It is using discovery process to automatically add the device. |
+|[hadev.c](examples/hadev.c/README.md)| Simulator of the Home Assistant device. It is supporting discovery process to automatically add the device in Home Assistant board. |
 
 ## References
-[^1]: [MQTT](https://mqtt.org)
-[^2]: [PlantUML](https://plantuml.com)
+[^1]: [[MQTT](https://mqtt.org)](https://mqtt.org)
+[^2]: [[PlantUML](https://plantuml.com)](https://plantuml.com)
+[^3]: [https://www.home-assistant.io](https://www.home-assistant.io)
