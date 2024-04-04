@@ -83,4 +83,4 @@ mqtt_cli_destr( &cli );
 [^1]: [https://mqtt.org](https://mqtt.org)
 [^2]: [https://plantuml.com](https://plantuml.com)
 [^3]: [https://www.home-assistant.io](https://www.home-assistant.io)
-[^4]: [https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf](https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf)
+[^4]: [https://web.archive.org/web/20200909074736if_/https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf](https://web.archive.org/web/20200909074736if_/https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf)
