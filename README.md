@@ -80,6 +80,6 @@ mqtt_cli_destr( &cli );
 |[hadev.c](examples/hadev.c/README.md)| Simulator of the Home Assistant device. It is supporting discovery process to automatically add the device in Home Assistant board. |
 
 ## References
-[^1]: [[MQTT](https://mqtt.org)](https://mqtt.org)
-[^2]: [[PlantUML](https://plantuml.com)](https://plantuml.com)
+[^1]: [https://mqtt.org](https://mqtt.org)
+[^2]: [https://plantuml.com](https://plantuml.com)
 [^3]: [https://www.home-assistant.io](https://www.home-assistant.io)
