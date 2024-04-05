@@ -54,6 +54,29 @@ cli.set_br_ip( &cli, srv_ip);
 cli.set_br_keepalive( &cli, keep_alive );
 ```
 ### Processing the data
+```C
+uint16_t rc = MQTT_SUCCESS;
+mqtt_cli cli;
+clv_t data = { };
+mqtt_channel_t channel = { };
+
+/* ...initializing and configuring the library ... */
+
+cli.set_cb_publish( &cli, cb_publish );
+
+/* ... processing timeout or received packet ... */
+do {
+  rc = cli->process( &cli, &data, &channel);
+  if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
+    /* ... error processing ... */
+  }
+
+  if( data.length ) {
+    /* ... sending data ... */
+  }
+
+} while( rc == MQTT_PENDING_DATA );
+```
 ### Preparing *PUBLISH* package
 ```C
 const char *topic = "sensor01";
