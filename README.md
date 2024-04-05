@@ -62,9 +62,6 @@ mqtt_channel_t channel = { };
 
 /* ...initializing and configuring the library ... */
 
-cli.set_cb_publish( &cli, cb_publish );
-
-/* ... processing timeout or received packet ... */
 do {
   rc = cli->process( &cli, &data, &channel);
   if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
