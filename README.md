@@ -94,11 +94,27 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
 }
 
 int main() {
+  uint16_t rc = MQTT_SUCCESS;
   mqtt_cli cli;
+  clv_t data = { };
+  mqtt_channel_t channel = { };
 
   /* ...initializing and configuring the library ... */
 
-  cli.set_cb_publish( &cli, cb_publish );  
+  cli.set_cb_publish( &cli, cb_publish );
+
+  /* ... processing timeout or received packet ... */
+  do {
+    rc = cli->process( cli, data, channel);
+    if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
+      /* ... error processing ... */
+    }
+
+    if( data->length ) {
+      /* ... sending data ... */
+    }
+
+  } while( rc == MQTT_PENDING_DATA );
 }
 ```
 ### Preparing *SUBSCRIBE* package
@@ -132,19 +148,33 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
   subscribe_params.filter.length = sprintf( buffer->value, "%s/%s", base_topic, command_topic );
   if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
     rc =  RC_IMPL_SPEC_ERR;
-    goto finish;   
   }
 
-finish:
   return rc;
 }
 
 int main() {
+  uint16_t rc = MQTT_SUCCESS;
   mqtt_cli cli;
+  clv_t data = { };
+  mqtt_channel_t channel = { };
 
   /* ...initializing and configuring the library ... */
 
   cli.set_cb_connack( &cli, cb_connack );
+
+  /* ... processing timeout or received packet ... */
+  do {
+    rc = cli->process( cli, data, channel);
+    if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
+      /* ... error processing ... */
+    }
+
+    if( data->length ) {
+      /* ... sending data ... */
+    }
+
+  } while( rc == MQTT_PENDING_DATA );
 }
 ```
 ### Releasing the library resources
