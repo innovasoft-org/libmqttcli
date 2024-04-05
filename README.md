@@ -45,6 +45,9 @@ The second step is to configure the library:
 const uint16_t timeout = 1;
 const uint32_t srv_ip = 0xC0A80201;
 const uint16_t keep_alive = 60;
+mqtt_cli cli;
+
+/* ... initializing the library ... */
 
 cli.set_timeout( &cli, timeout);
 cli.set_br_ip( &cli, srv_ip);
@@ -58,6 +61,7 @@ const char *message = "ON";
 uint8_t buffer[1024] = { 0 };
 clv_t data = { .capacity=sizeof(buffer)/sizeof(uint8_t), .value=buffer };
 mqtt_publish_params_t params = { };
+mqtt_cli cli;
 
 /* ... initializing and configuring the library ... */
 
@@ -69,12 +73,41 @@ if(MQTT_SUCCESS != cli.publish_ex( &cli, &params, &data)) {
 
 /* ... sending the data ... */
 ```
+### Preparing *PUBLISH* package inside a callback
+```C
+static const char* base_topic = "homeassistant/switch/hadev123456";
+static const char* state_topic = "state";
+
+mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
+  mqtt_rc_t rc = RC_SUCCESS;
+  mqtt_publish_params_t publish_params = { };
+
+  /* Publishing current state */
+  publish_params.topic.value = buffer->value;
+  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, state_topic );
+  publish_params.message = pkt->message;
+  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
+    rc =  RC_IMPL_SPEC_ERR;
+  }
+
+  return rc;
+}
+
+int main() {
+  mqtt_cli cli;
+
+  /* ...initializing and configuring the library ... */
+
+  cli.set_cb_publish( &cli, cb_publish );  
+}
+```
 ### Preparing *SUBSCRIBE* package
 ```C
 const char *topic = "homeassistant/dev12345678/state";
 uint8_t buffer[1024] = { 0 };
 clv_t data = { .capacity=sizeof(buffer)/sizeof(uint8_t), .value=buffer };
 mqtt_subscribe_params_t subscribe_params = { };
+mqtt_cli cli;
 
 /* ... initializing and configuring the library ... */
 
@@ -85,9 +118,42 @@ if(MQTT_SUCCESS != self->subscribe(&cli, &subscribe_params, &data)) {
 
 /* ... sending the data ... */
 ```
+### Preparing *SUBSCRIBE* package inside a callback
+```C
+static const char* base_topic = "homeassistant/switch/hadev123456";
+const char* command_topic = "set";
+
+mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
+  mqtt_rc_t rc = RC_SUCCESS;
+  mqtt_subscribe_params_t subscribe_params = { };
+
+  /* Subscribing to receive commands */
+  subscribe_params.filter.value = buffer->value;
+  subscribe_params.filter.length = sprintf( buffer->value, "%s/%s", base_topic, command_topic );
+  if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
+    rc =  RC_IMPL_SPEC_ERR;
+    goto finish;   
+  }
+
+finish:
+  return rc;
+}
+
+int main() {
+  mqtt_cli cli;
+
+  /* ...initializing and configuring the library ... */
+
+  cli.set_cb_connack( &cli, cb_connack );
+}
+```
 ### Releasing the library resources
 To avoid memory leaks in the program, the library resources must be released if only they are not needed anymore.
 ```C
+mqtt_cli cli;
+
+/* ... initializing and configuring the library ... */
+
 mqtt_cli_destr( &cli );
 ```
 ## Examples
