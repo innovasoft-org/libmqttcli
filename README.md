@@ -105,7 +105,7 @@ int main() {
 
   /* ... processing timeout or received packet ... */
   do {
-    rc = cli->process( cli, data, channel);
+    rc = cli->process( &cli, data, channel);
     if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
       /* ... error processing ... */
     }
@@ -165,7 +165,7 @@ int main() {
 
   /* ... processing timeout or received packet ... */
   do {
-    rc = cli->process( cli, data, channel);
+    rc = cli->process( &cli, data, channel);
     if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
       /* ... error processing ... */
     }
