@@ -59,15 +59,30 @@ uint8_t buffer[1024] = { 0 };
 const lv_t cli_topic = { .length=strlen(topic), .value=(uint8_t*)topic  };
 const lv_t cli_message = { .length=strlen(message), .value=(uint8_t*)message  };
 clv_t data = { .capacity=sizeof(buffer)/sizeof(uint8_t), .value=buffer };
-mqtt_publish_params_t params;
+mqtt_publish_params_t params = { };
 
 params.message = message;
-params.properties.length = 0;
-params.properties.value = NULL;
 params.topic = topic;
-cli.publish_ex( &cli, &params, &data);
+if(MQTT_SUCCESS != cli.publish_ex( &cli, &params, &data)) {
+  /* ... error processing ... */
+}
+
+/* ... sending the data ... */
 ```
 ### Preparing *SUBSCRIBE* package
+```C
+const char *topic = "homeassistant/dev12345678/state";
+uint8_t buffer[1024] = { 0 };
+const lv_t cli_topic = { .length=strlen(topic), .value=(uint8_t*)topic  };
+clv_t data = { .capacity=sizeof(buffer)/sizeof(uint8_t), .value=buffer };
+mqtt_subscribe_params_t subscribe_params = { };
+
+if(MQTT_SUCCESS != self->subscribe(&cli, &subscribe_params, &data)) {
+  /* ... error processing ... */
+}
+
+/* ... sending the data ... */
+```
 ### Releasing the library resources
 To avoid memory leaks in the program, the library resources must be released if only they are not needed anymore.
 ```C
