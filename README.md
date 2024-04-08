@@ -9,7 +9,9 @@ All referenced product or service names and trademarks are the property of their
 ## Introduction
 The aim of this repo is to demonstrate possibilities as well as usage of the `libmqttcli.a` library.
 ## Features
-- Supports the client side of the MQTT [^1] protocol.
+- Supports the client side of the MQTT[^1] protocol.
+- Supports MQTT[^1] versions: 3.1.1 and 5.0
+- Supports QoS levels: 0 and 1
 - Is relatively easy to use. The user does not need to know details of the MQTT protocol. The library automatically prepares the following packets: `CONNECT`, `AUTH`, `DISCONNECT`, `PUBACK` and `PINGREQ`. The user via library interface is allowed to prepare the following packets: `PUBLISH`, `SUBSCRIBE` and `DISCONNECT`.
 - The whole library contains proprietary implementation. There are no third party implementations included. The following external standard functions are used: `malloc`, `memcpy` and `memcmp`.
 - The library is totally written in C89[^4] standard.
