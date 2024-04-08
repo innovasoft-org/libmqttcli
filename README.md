@@ -37,13 +37,17 @@ The following sections names corresponds to the lightblue actions presented on <
 ### Initializing the library
 The first step is to initialize the library. It shall be performed as follows:
 ```C
+uint16_t rc
 mqtt_cli cli;
 mqtt_params_t params = {.bufsize=2048, .timeout=1};
 
-if(MQTT_SUCCESS != mqtt_cli_init( &cli, &params ) {
+if(MQTT_SUCCESS != (rc = mqtt_cli_init( &cli, &params )) {
   /* ... error processing ... */
 }
 ```
+> [!NOTE]
+> if //rc// is equal to MQTT_OUT_OF_MEM then it means there is not wnogh memory to initialize the library
+> if //rc// is equal to MQTT_INVALID_ARGS then it means specified //params// are incorrect
 ### Configuring the library
 The second step is to configure the library:
 ```C
