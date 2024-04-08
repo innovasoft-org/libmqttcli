@@ -58,7 +58,8 @@ cli.set_br_keepalive( &cli, keep_alive );
 ```C
 uint16_t rc = MQTT_SUCCESS;
 mqtt_cli cli;
-clv_t data = { };
+uint8_t buffer[1024] = { 0 };
+clv_t data = { .capacity=sizeof(buffer)/sizeof(uint8_t), .value=buffer };
 mqtt_channel_t channel = { };
 
 /* ...initializing and configuring the library ... */
