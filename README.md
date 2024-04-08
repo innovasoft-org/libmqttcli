@@ -46,7 +46,7 @@ if(MQTT_SUCCESS != (rc = mqtt_cli_init( &cli, &params )) {
 }
 ```
 > [!NOTE]
-> - if *rc* is equal to *MQTT_OUT_OF_MEM* then it means there is not wnogh memory to initialize the library
+> - if *rc* is equal to *MQTT_OUT_OF_MEM* then it means there is not enough memory to initialize the library
 > - if *rc* is equal to *MQTT_INVALID_ARGS* then it means specified *params* are incorrect
 ### Configuring the library
 The second step is to configure the library:
