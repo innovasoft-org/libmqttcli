@@ -36,20 +36,21 @@ The following sections names corresponds to the lightblue actions presented on <
 The first step is to initialize the library. It shall be performed as follows:
 ```C
 mqtt_cli cli;
+mqtt_params_t params = {.bufsize=2048, .timeout=1};
 
-mqtt_cli_init( &cli );
+if(MQTT_SUCCESS != mqtt_cli_init( &cli, &params ) {
+  /* ... error processing ... */
+}
 ```
 ### Configuring the library
 The second step is to configure the library:
 ```C
-const uint16_t timeout = 1;
 const uint32_t srv_ip = 0xC0A80201;
 const uint16_t keep_alive = 60;
 mqtt_cli cli;
 
 /* ... initializing the library ... */
 
-cli.set_timeout( &cli, timeout);
 cli.set_br_ip( &cli, srv_ip);
 cli.set_br_keepalive( &cli, keep_alive );
 ```
