@@ -62,7 +62,7 @@ uint8_t buffer[1024] = { 0 };
 clv_t data = { .capacity=sizeof(buffer)/sizeof(uint8_t), .value=buffer };
 mqtt_channel_t channel = { };
 
-/* ...initializing and configuring the library ... */
+/* ... initializing and configuring the library ... */
 
 do {
   rc = cli->process( &cli, &data, &channel);
@@ -121,7 +121,7 @@ int main() {
   clv_t data = { };
   mqtt_channel_t channel = { };
 
-  /* ...initializing and configuring the library ... */
+  /* ... initializing and configuring the library ... */
 
   cli.set_cb_publish( &cli, cb_publish );
 
@@ -181,7 +181,7 @@ int main() {
   clv_t data = { };
   mqtt_channel_t channel = { };
 
-  /* ...initializing and configuring the library ... */
+  /* ... initializing and configuring the library ... */
 
   cli.set_cb_connack( &cli, cb_connack );
 
