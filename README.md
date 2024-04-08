@@ -161,7 +161,7 @@ if(MQTT_SUCCESS != self->subscribe(&cli, &subscribe_params, &data)) {
 ### Preparing *SUBSCRIBE* package inside a callback
 ```C
 static const char* base_topic = "homeassistant/switch/hadev123456";
-const char* command_topic = "set";
+static const char* command_topic = "set";
 
 mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
   mqtt_rc_t rc = RC_SUCCESS;
