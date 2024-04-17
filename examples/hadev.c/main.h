@@ -78,10 +78,6 @@ typedef struct program_ctx {
   int non_blocking;
   /** Buffer size */
   int buffer_size;
-  /** Time stamps */
-  int time_stamps;
-  /** Non blocking mode timeout */
-  int timeout;
   /** Log maximum level which will be printed */
   int log_max_level;
   /** Log file descriptor (determines were to log the data) */

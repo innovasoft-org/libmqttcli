@@ -7,10 +7,15 @@
 
 struct mqtt_common_ctx;
 
-/** MQTT version */
-#define MQTT_VERSION          5
 /** Maximum buffer size */
-#define BUFFER_SIZE           2048
+#define DEFAULT_BUFSIZE  1024
+/** Default QoS: 0 */
+#define DEFAULT_QOS      0
+/** Default timeout */
+#define DEFAULT_TIMEOUT  1
+/** MQTT version */
+#define DEFAULT_VERSION  5
+
 /** Minimum length of the Protocol Name */
 #define MIN_PROTOCOL_NAME_LEN 4
 /** Maximum length of the Protocol Name */
@@ -44,7 +49,7 @@ struct mqtt_common_ctx;
 /** Maximum properties length */
 #define MAX_PROPERTIES_LEN    255
 /** Minimum will payload length */
-#define MIN_WILL_PAYLOAD_LEN  0
+#define MIN_WILL_PAYLOAD_LEN  1
 /** Maximum will payload length */
 #define MAX_WILL_PAYLOAD_LEN  1024
 /** Maximum number of topic filters in subscribe packet */
@@ -90,6 +95,8 @@ struct mqtt_common_ctx;
 #define MQTT_PKT_REJECTED        ( (uint16_t) 0x0A0A )
 #define MQTT_NO_PKT_ID           ( (uint16_t) 0x0A0B )
 #define MQTT_NOT_CONNECTED       ( (uint16_t) 0x0A0C )
+#define MQTT_NOT_SUPPORTED       ( (uint16_t) 0x0A0D )
+#define MQTT_NOT_INITIALIZED     ( (uint16_t) 0x0A0E )
 
 typedef enum {
   /** Byte */
@@ -208,11 +215,25 @@ typedef struct {
 } lv_t;
 
 typedef struct {
+  /** Total capacity of the buffer */
   const size_t capacity;
+  /** Current buffer length */
   size_t length;
+  /** Buffer value */
   uint8_t *const value;
   /** Capacity Length Value structure */
 } clv_t;
+
+typedef struct {
+  /** Internal buffer size */
+  uint16_t bufsize;
+  /** Quality of Service */
+  uint8_t qos;
+  /** Representation of timeout in seconds */
+  uint16_t timeout;
+  /** MQTT protocol version */
+  uint8_t version;
+} mqtt_params_t;
 
 typedef struct {
   /** Flags */

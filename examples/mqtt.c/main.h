@@ -42,6 +42,10 @@
 #define S_OPT_MESSAGE       'm'
 /** Long option: message */
 #define L_OPT_MESSAGE       "message"
+/** Short option: message */
+#define S_OPT_MQTT_VERSION  '3'
+/** Long option: message */
+#define L_OPT_MQTT_VERSION  "mqtt-version"
 /** Short option: publish */
 #define S_OPT_PUBLISH       '1'
 /** Long option: publish */
@@ -121,6 +125,8 @@ typedef struct program_ctx {
   uint8_t state;
   /** Stores timer interrupt status */
   uint8_t timer_int;
+  /** Stores MQTT protocol's version */
+  uint8_t mqtt_version;
 } context_t;
 
 #define IS_MULTICAST(IPADDR) ( (IPADDR & 0x000000E0) == 0x000000E0 )

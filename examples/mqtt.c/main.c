@@ -30,6 +30,7 @@ static struct option long_options[] = {
   {L_OPT_REUSE_ADDR,  required_argument,  0,  S_OPT_REUSE_ADDR},
   {L_OPT_TOPIC,       required_argument,  0,  S_OPT_TOPIC},
   {L_OPT_MESSAGE,     required_argument,  0,  S_OPT_MESSAGE},
+  {L_OPT_MQTT_VERSION,required_argument,  0,  S_OPT_MQTT_VERSION},
   {L_OPT_USERID,      required_argument,  0,  S_OPT_USERID},
   {L_OPT_USERNAME,    required_argument,  0,  S_OPT_USERNAME},
   {L_OPT_PASSWORD,    required_argument,  0,  S_OPT_PASSWORD},
@@ -62,6 +63,7 @@ int validate_args(int argc, char **argv) {
   ctx.time_stamps = 0;
   ctx.non_blocking = 1;
   ctx.timeout = 1;
+  ctx.mqtt_version = 5;
 
   if(NULL == strstr(argv[0], PROGRAM_NAME)) {
     TOLOG(LOG_ERR,"Program name was changed to %s",argv[0]);
@@ -148,12 +150,20 @@ int validate_args(int argc, char **argv) {
         }
         memcpy(ctx.message, optarg, length);
         break;
+      case S_OPT_MQTT_VERSION:
+        ctx.mqtt_version = atoi( optarg );
+        break;
       case '?':
         return RESULT_FAILURE;
         break;
       default:
         exit(1);
     }
+  }
+
+  if(ctx.mqtt_version != 4 && ctx.mqtt_version != 5) {
+    TOLOG(LOG_ERR, "invalid MQTT version");
+    return RESULT_FAILURE;    
   }
 
   if(ctx.publish && ( !ctx.topic[0] || !ctx.message[0] ) ) {
@@ -209,6 +219,7 @@ void usage(const char* program) {
   printf(" -%c size, --%s size\r\n\t%s\r\n",           S_OPT_BUFFER_SIZE, L_OPT_BUFFER_SIZE,   "Sets buffer size, which is dynamically allocated.");
   printf(" -%c host_name, --%s host_name\r\n\t%s\r\n", S_OPT_HOST,        L_OPT_HOST,          "Sets remote host name or IP address.");
   printf(" -%c message, --%s message\r\n\t%s\r\n",     S_OPT_MESSAGE,     L_OPT_MESSAGE,       "Sets the message used during PUBLISH packet creation.");
+  printf(" --%s message\r\n\t%s\r\n",                  L_OPT_MQTT_VERSION,                     "Sets MQTT protocol's version. If not specified version = 5.");
   printf(" -%c port, --%s port\r\n\t%s\r\n",           S_OPT_PORT,        L_OPT_PORT,          "Sets the remote port to be used.");
   printf(" -%c topic, --%s topic\r\n\t%s\r\n",         S_OPT_TOPIC,       L_OPT_TOPIC,         "Sets the topic used during PUBLISH or SUBSCRIBE packets creation.");
   printf(" -%c, --%s\r\n\t%s\r\n",                     S_OPT_VERBOSE,     L_OPT_VERBOSE,       "Runs the program in verbose mode.");
@@ -223,7 +234,7 @@ void show_info() {
     return;
   }
 
-  printf("MQTT client (c) 2023\r\n");
+  printf("MQTT client (c) 2024\r\n");
   printf("\r\n");
   printf("         IP: %s\r\n", ctx.ip);
   printf("       Port: %d\r\n", ctx.port);
@@ -383,6 +394,7 @@ int process_and_send_data(int sock, mqtt_cli_t *cli, clv_t *data, mqtt_channel_t
 }
 
 mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
+  uint16_t rc;
   uint8_t properties[] = {0x26, 0x00, 0x01, 'n', 0x00, 0x01, 'v'};
   lv_t PROPERTIES = {.length=sizeof(properties)/sizeof(uint8_t), .value=properties };
   mqtt_publish_params_t publish_params;
@@ -391,15 +403,25 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
   if(ctx.publish == 1) {
     publish_params.flags = 0x02;
     publish_params.message = (lv_t) {.length=strlen(ctx.message), .value=ctx.message };
-    publish_params.properties = PROPERTIES;
+    if(ctx.mqtt_version >= 5) {
+      publish_params.properties = PROPERTIES;
+    }
+    else {
+      publish_params.properties.length = 0;
+      publish_params.properties.value = NULL;
+    }
     publish_params.topic = (lv_t) {.length=strlen(ctx.topic), .value=ctx.topic };
-    self->publish(self, &publish_params);
+    if( MQTT_SUCCESS != (rc = self->publish(self, &publish_params))) {
+      TOLOG(LOG_CRIT, "publish() failed, rc = %d", rc);
+    }
   }
   
   if(ctx.subscribe == 1) {
     subscribe_params.filter = (mqtt_subscribe_filter_t) {.length=strlen(ctx.topic), .options=1, .value=ctx.topic, };
     subscribe_params.properties = (lv_t) {.length=0, .value=NULL };
-    self->subscribe(self, &subscribe_params);
+    if( MQTT_SUCCESS != (rc = self->subscribe(self, &subscribe_params))) {
+      TOLOG(LOG_CRIT, "subscribe() failed, rc = %d", rc);
+    }
   }
 
   return RC_SUCCESS;
@@ -467,6 +489,7 @@ int main(int argc, char** argv) {
   lv_t packet, cli_userid, cli_username, cli_password;
   mqtt_publish_params_t publish_params;
   mqtt_subscribe_params_t subscribe_params;
+  mqtt_params_t mqtt_params = {};
 
   /* Initialize */
   memset( &cli, 0x00, sizeof(cli));
@@ -560,8 +583,12 @@ int main(int argc, char** argv) {
   if(ctx.verbose) {
     printf("Initializing MQTT client...");
   }
-  if( MQTT_SUCCESS != (rc = mqtt_cli_init( &cli )) ) {
-    TOLOG(LOG_ERR,"mqtt_cli_init( ... ), rc = %d", rc);
+  mqtt_params.bufsize = ctx.buffer_size;
+  mqtt_params.timeout = 1;
+  mqtt_params.version = ctx.mqtt_version;
+  mqtt_params.qos = 0;
+  if( MQTT_SUCCESS != (rc = mqtt_cli_init_ex( &cli, &mqtt_params )) ) {
+    TOLOG(LOG_ERR,"mqtt_cli_init_ex( ... ), rc = %d", rc);
     result = RESULT_FAILURE;
     goto finish;    
   }
@@ -578,8 +605,7 @@ int main(int argc, char** argv) {
   }
   cli.set_cb_connack( &cli, cb_connack );
   cli.set_br_ip( &cli, srv_ip);
-  cli.set_timeout( &cli, (uint16_t) ctx.timeout);
-  cli.set_br_keepalive( &cli, (uint16_t) 60);
+  cli.set_br_keepalive( &cli, (uint16_t) 10);
   if(ctx.userid[0] == 0) {
     now = time(NULL);
     ctx.userid[0] = ctx.publish == 1 ? 'p' : 's';
