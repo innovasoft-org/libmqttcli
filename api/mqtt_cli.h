@@ -131,7 +131,7 @@ struct mqtt_cli {
      */
     uint16_t (*process) (const mqtt_cli_t *self, clv_t *data, mqtt_channel_t *channel);
     /** 
-     * @brief Prepares the DISCONNECT packet which will be send in the following process() function execution 
+     * @brief Prepares the DISCONNECT packet which will be send in the following process() function execution.
      * 
      * @param self pointer to the private context data
      */
@@ -160,8 +160,8 @@ struct mqtt_cli {
      * @param self pointer to the private context data
      * @param ip value representing ip.
      * 
-     * @note This setting is mandatory.
-     * @note Default value is 0.
+     * @note This setting is optional.
+     * @note Default value is 127.0.0.1.
      */
     void     (*set_br_ip) (const mqtt_cli_t *self, const uint32_t ip);
     /**
@@ -262,67 +262,142 @@ struct mqtt_cli {
      */
     void     (*get_br_will) (const mqtt_cli_t *self, mqtt_will_params_t *will);
     /**
-     * @brief Checks is the client is already connected.
+     * @brief Checks is the Client is already connected.
      * 
      * @param self pointer to the private context data
      * @param is_connected pointer to the value determining if the client is already connected
      */
     void     (*is_connected) (const mqtt_cli_t *self, uint8_t *is_connected);
+    /**
+     * @brief Obtains the total packet length.
+     * 
+     * @param self pointer to the private context data
+     * @param packet pointer to the packet data for which the length will be calculated
+     * @param length pointer to calculated length of the packet
+     */
     void     (*get_pkt_length) (const mqtt_cli_t *self, lv_t *packet, size_t *length);
-    void     (*set_timeout) (const mqtt_cli_t *self, uint16_t timeout);
-    void     (*get_timeout) (const mqtt_cli_t *self, uint16_t *timeout);
-    /** Obtains MQTT protocol version */
+    /** 
+     * @brief Obtains MQTT this library version.
+     * 
+     * @param self pointer to the private context data
+     * @param version pointer to the 32-bit value representing the version
+     * 
+     * @note The obtained version has a format: a.b.c.d
+     */
     void     (*get_lib_version) (const mqtt_cli_t *self, uint32_t *version);
-    /** Obtain last packet sent */
+    /** 
+     * @brief Obtains the last packet type which was prepared.
+     * 
+     * @param self pointer to the private context data
+     * @param last_pkt pointer to the 8-bit value representing last prepared packet type.
+     */
     void     (*get_last_pkt) (const mqtt_cli_t *self, uint8_t *last_pkt);
-
+    /**
+     * @brief Obtains configured buffer size.
+     * 
+     * @param self pointer to the private context data
+     * @param last_pkt pointer to the 16-bit value representing configured internal buffer size.
+     */
+    void     (*get_buffersize) (const mqtt_cli_t *self, uint16_t *buffersize);
     /**
      * @brief Sets callback on packet DISCONNECT received.
+     * 
      * @param self pointer to the private context data
      * @param cb_mqtt_disconnect function pointer
+     * 
+     * @note This value is optional.
+     * @note Default value is NULL.
      */
     void     (*set_cb_disconnect) (const mqtt_cli_t *self, cb_mqtt_disconnect_t cb_mqtt_disconnect);
     /**
      * @brief Sets callback on packet PUBACK received.
+     * 
      * @param self pointer to the private context data
-     * @param cb_mqtt_disconnect function pointer
+     * @param cb_mqtt_puback function pointer
+     * 
+     * @note This value is optional.
+     * @note Default value is NULL.
      */
     void     (*set_cb_puback) (const mqtt_cli_t *self, cb_mqtt_puback_t cb_mqtt_puback);
     /**
      * @brief Sets callback on packet PUBLISH received.
+     * 
      * @param self pointer to the private context data
-     * @param cb_mqtt_disconnect function pointer
+     * @param cb_mqtt_publish function pointer
+     * 
+     * @note This value is optional.
+     * @note Default value is NULL.
      */
     void     (*set_cb_publish) (const mqtt_cli_t *self, cb_mqtt_publish_t cb_mqtt_publish);
     /** 
      * @brief Sets callback on packet SUBACK received.
+     * 
      * @param self pointer to the private context data
-     * @param cb_mqtt_disconnect function pointer
+     * @param cb_mqtt_suback function pointer
+     * 
+     * @note This value is optional.
+     * @note Default value is NULL.
      */
     void     (*set_cb_suback) (const mqtt_cli_t *self, cb_mqtt_suback_t cb_mqtt_suback);
     /** 
      * @brief Sets callback on packet CONNACK received.
+     * 
      * @param self pointer to the private context data
-     * @param cb_mqtt_disconnect function pointer
+     * @param cb_mqtt_connack function pointer
+     * 
+     * @note This value is optional.
+     * @note Default value is NULL.
      */
     void     (*set_cb_connack) (const mqtt_cli_t *self, cb_mqtt_connack_t cb_mqtt_connack);
     /**
      * @brief Sets callback on packet CONNECT being prepared or AUTH packet received.
+     * 
      * @param self pointer to the private context data
-     * @param cb_mqtt_disconnect function pointer
+     * @param cb_mqtt_auth function pointer
+     * 
+     * @note This value is optional.
+     * @note Default value is NULL.
      */
     void     (*set_cb_auth) (const mqtt_cli_t *self, cb_mqtt_auth_t cb_mqtt_auth);
-#ifdef __MQTT_EXPOSED__ /* U sed only for test purpose */
-    /** Obtains the current protocol state */
-    void     (*get_state) (const mqtt_cli_t *self, uint8_t *state);
-#endif // __MQTT_EXPOSED__
 };
 
+/**
+ * @brief Initializes MQTT protocol with specified parameters.
+ * 
+ * @param obj pointer to the private context data
+ * @param params pointer protocol parameters
+ * @returns MQTT_SUCCESS if the library was successfully initialized, otherwise:
+ *          MQTT_OUT_OF_MEM if there was not enough memory to initialize the library or
+ *          MQTT_INVALID_ARGS if specified parameters are out of acceptable ranges.
+ * 
+ * @note It is not possible to change these parameters afters successful initialization.
+ */
+uint16_t __ATTR mqtt_cli_init_ex(mqtt_cli_t *obj, mqtt_params_t *params);
+/**
+ * @brief Initializes MQTT protocol using default parameters
+ * 
+ * @param obj pointer to the private context data
+ * @param params pointer protocol parameters
+ * @returns MQTT_SUCCESS if the library was successfully initialized, otherwise:
+ *          MQTT_OUT_OF_MEM if there was not enough memory to initialize the library.
+ * 
+ * @note It is not possible to change these parameters afters successful initialization.
+ * @note Default parameters are equal as follows:
+ *       bufsize = 1024 B,
+ *       qos = 0,
+ *       timeout = 1 second and
+ *       version = 5
+ */
 uint16_t __ATTR mqtt_cli_init(mqtt_cli_t *obj);
-void __ATTR mqtt_cli_destr(mqtt_cli_t *obj);
+/**
+ * @brief Releases the library's resources. 
+ * 
+ * @param obj pointer to the private context data
+ */
+void     __ATTR mqtt_cli_destr(mqtt_cli_t *obj);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // __MQTT_H__
+#endif // __MQTT_CLI_H__

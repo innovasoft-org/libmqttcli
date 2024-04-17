@@ -71,9 +71,7 @@ int validate_args(int argc, char **argv) {
 	ctx.port = DEFAULT_PORT;
   ctx.optval_reuse_addr = 0x00;
   ctx.buffer_size = DEFAULT_BUFFER_SIZE;
-  ctx.time_stamps = 0;
   ctx.non_blocking = 1;
-  ctx.timeout = 1;
 
   if(NULL == strstr(argv[0], PROGRAM_NAME)) {
     TOLOG(LOG_ERR,"Program name was changed to %s",argv[0]);
@@ -470,6 +468,7 @@ int main(int argc, char** argv) {
   lv_t packet, cli_userid, cli_username, cli_password;
   mqtt_publish_params_t publish_params = {  };
   mqtt_will_params_t will_params = (mqtt_will_params_t) { };
+  mqtt_params_t mqtt_params = { .timeout=1, .version=4 };
 
   /* Initialize */
   memset( &cli, 0x00, sizeof(cli));
@@ -568,7 +567,8 @@ int main(int argc, char** argv) {
   if(ctx.verbose) {
     printf("Initializing MQTT client...");
   }
-  if( MQTT_SUCCESS != (rc = mqtt_cli_init( &cli )) ) {
+  mqtt_params.bufsize = ctx.buffer_size;
+  if( MQTT_SUCCESS != (rc = mqtt_cli_init_ex( &cli, &mqtt_params )) ) {
     TOLOG(LOG_ERR,"mqtt_cli_init( ... ), rc = %d", rc);
     rc = RESULT_FAILURE;
     goto finish;    
@@ -584,7 +584,6 @@ int main(int argc, char** argv) {
   cli.set_cb_connack( &cli, cb_connack );
   cli.set_cb_publish( &cli, cb_publish );
   cli.set_br_ip( &cli, srv_ip);
-  cli.set_timeout( &cli, (uint16_t) ctx.timeout);
   cli.set_br_keepalive( &cli, (uint16_t) 60);
   will_params.topic.value = buffer->value;
   will_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, availability_topic );
@@ -646,11 +645,11 @@ int main(int argc, char** argv) {
   }
 
 	/* Configure the timer to expire after n sec... */
-	timer.it_value.tv_sec = ctx.timeout;
+	timer.it_value.tv_sec = 1;
 	timer.it_value.tv_usec = 0;
 
 	/* ... and every n sec after that. */
-	timer.it_interval.tv_sec = ctx.timeout;
+	timer.it_interval.tv_sec = 1;
 	timer.it_interval.tv_usec = 0;
 
 	/* Start a real timer. It counts down whenever this process is
