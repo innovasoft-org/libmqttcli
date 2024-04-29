@@ -26,8 +26,23 @@
 &emsp;_-v, --verbose_  
 &emsp;&emsp;Starts the program in a verbose mode.  
 # Examples
-1. Connect to `test.mosquitto.org` using unprotected connection and subscribe to `#`
+-#. Client establishes connection to the `test.mosquitto.org` without authentication and subscribes to '#'
 ```
-mqtt --sub -h test.mosquitto.org -p 1884 --username rw --password readwrite -t "#" -v
+mqtt --sub -h test.mosquitto.org -p 1883 -t '#' -v --mqtt-version 5
 ```
-
+-#. Client establishes connection to the `test.mosquitto.org` using login, password and subscribes to '#'
+```
+mqtt --sub -h test.mosquitto.org -p 1884 --username rw --password readwrite -t '#' -v --mqtt-version 4
+```
+-#. Client establishes secure connection to the `test.mosquitto.org` without authentication, using only CA certificate and subscribes to '#'
+```
+mqtt --sub -h test.mosquitto.org -p 8883 -t '#' -v --mqtt-version 5 --cafile ./mosquitto.org.crt
+```
+-#. Client establishes secure connection to the `test.mosquitto.org` without authentication, using CA certificate, his certificate, its private key and subscribes to '#'
+```
+mqtt --sub -h test.mosquitto.org -p 8884 -t '#' -v --mqtt-version 5 --cafile ./mosquitto.org.crt --cert ./client.crt --key ./client.key
+```
+-#. Client establishes secure connection to the `test.mosquitto.org` using login, password, only CA certificate and subscribes to '#' 
+```
+mqtt --sub -h test.mosquitto.org -p 8885 --username rw --password readwrite -t '#' -v --mqtt-version 5 --cafile ./mosquitto.org.crt
+```

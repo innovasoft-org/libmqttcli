@@ -1,7 +1,9 @@
 {
   "cSpell.words": [
     "avty",
+    "cafile",
     "connack",
+    "gpointer",
     "hadev",
     "homeassistant",
     "htos",
@@ -9,14 +11,19 @@
     "malloc",
     "memcmp",
     "memcpy",
+    "mosquitto",
     "mqttcli",
+    "NOCLOSE",
     "PINGREQ",
     "Piwowarczyk",
     "PUBACK",
     "stoh",
+    "tlsext",
     "TOLOG"
   ],
   "files.associations": {
-    "signal.h": "c"
-  }
+    "signal.h": "c",
+    "config.h": "c"
+  },
+  "C_Cpp.errorSquiggles": "enabled"
 }

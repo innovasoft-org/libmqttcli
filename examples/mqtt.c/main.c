@@ -15,6 +15,13 @@
 #include <time.h> /* time() */
 #include <signal.h> /* sigaction() ... */
 
+#include <openssl/bio.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
+
 #include "main.h"
 #include "utils.h"
 #include "utils.h"
@@ -24,21 +31,25 @@
 static context_t ctx;
 
 static struct option long_options[] = {
-  {L_OPT_HOST,        required_argument,  0,  S_OPT_HOST},
-  {L_OPT_PORT,        required_argument,  0,  S_OPT_PORT},
   {L_OPT_BUFFER_SIZE, required_argument,  0,  S_OPT_BUFFER_SIZE},
-  {L_OPT_REUSE_ADDR,  required_argument,  0,  S_OPT_REUSE_ADDR},
-  {L_OPT_TOPIC,       required_argument,  0,  S_OPT_TOPIC},
+  {L_OPT_CAFILE,      required_argument,  0,  S_OPT_CAFILE},
+  {L_OPT_CAPATH,      required_argument,  0,  S_OPT_CAPATH},
+  {L_OPT_CERT,        required_argument,  0,  S_OPT_CERT},
+  {L_OPT_HOST,        required_argument,  0,  S_OPT_HOST},
+  {L_OPT_KEY,         required_argument,  0,  S_OPT_KEY},
   {L_OPT_MESSAGE,     required_argument,  0,  S_OPT_MESSAGE},
   {L_OPT_MQTT_VERSION,required_argument,  0,  S_OPT_MQTT_VERSION},
-  {L_OPT_USERID,      required_argument,  0,  S_OPT_USERID},
-  {L_OPT_USERNAME,    required_argument,  0,  S_OPT_USERNAME},
   {L_OPT_PASSWORD,    required_argument,  0,  S_OPT_PASSWORD},
-  {L_OPT_VERBOSE,     no_argument,        0,  S_OPT_VERBOSE},
-  {L_OPT_SUBSCRIBE,   no_argument,        0,  S_OPT_SUBSCRIBE},
-  {L_OPT_SUB,         no_argument,        0,  S_OPT_SUBSCRIBE},
+  {L_OPT_PORT,        required_argument,  0,  S_OPT_PORT},
   {L_OPT_PUBLISH,     no_argument,        0,  S_OPT_PUBLISH},
   {L_OPT_PUB,         no_argument,        0,  S_OPT_PUBLISH},
+  {L_OPT_REUSE_ADDR,  required_argument,  0,  S_OPT_REUSE_ADDR},
+  {L_OPT_SUBSCRIBE,   no_argument,        0,  S_OPT_SUBSCRIBE},
+  {L_OPT_SUB,         no_argument,        0,  S_OPT_SUBSCRIBE},
+  {L_OPT_TOPIC,       required_argument,  0,  S_OPT_TOPIC},
+  {L_OPT_USERID,      required_argument,  0,  S_OPT_USERID},
+  {L_OPT_USERNAME,    required_argument,  0,  S_OPT_USERNAME},
+  {L_OPT_VERBOSE,     no_argument,        0,  S_OPT_VERBOSE},
   {NULL,              no_argument,        0,  0}
 };
 
@@ -64,6 +75,7 @@ int validate_args(int argc, char **argv) {
   ctx.non_blocking = 1;
   ctx.timeout = 1;
   ctx.mqtt_version = 5;
+  ctx.tls = 0;
 
   if(NULL == strstr(argv[0], PROGRAM_NAME)) {
     TOLOG(LOG_ERR,"Program name was changed to %s",argv[0]);
@@ -77,10 +89,90 @@ int validate_args(int argc, char **argv) {
       break;
     }
     switch(c) {
-      case S_OPT_VERBOSE:
-        ctx.verbose = 1;
-        ctx.log_fd = stdout;
-        ctx.log_max_level = LOG_INFO;
+      case S_OPT_BUFFER_SIZE:
+        ctx.buffer_size = atoi( optarg );
+        break;
+      case S_OPT_CAFILE:
+        length = strlen( optarg );
+        ctx.cafile = (char*) malloc( length * sizeof(char) );
+        memcpy( ctx.cafile, optarg, length );
+        ctx.tls = 1;
+        break;
+      case S_OPT_CAPATH:
+        length = strlen( optarg );
+        ctx.capath = (char*) malloc( length * sizeof(char) );
+        memcpy( ctx.capath, optarg, length );
+        ctx.tls = 1;
+        break;
+      case S_OPT_CERT:
+        length = strlen( optarg );
+        ctx.cert = (char*) malloc( length * sizeof(char) );
+        memcpy( ctx.cert, optarg, length );
+        ctx.tls = 1;
+        break;
+      case S_OPT_HOST:
+        length = strlen( optarg );
+        if(length > sizeof(ctx.ip) / sizeof(char) ) {
+          TOLOG(LOG_ERR, "Invalid IP format");
+        }
+        memcpy(ctx.ip, optarg, length);
+        break;
+      case S_OPT_KEY:
+        length = strlen( optarg );
+        ctx.key = (char*) malloc( length * sizeof(char) );
+        memcpy( ctx.key, optarg, length );
+        ctx.tls = 1;
+        break;
+      case S_OPT_MESSAGE:
+        length = strlen( optarg );
+        if( MIN_MESSAGE_LEN > length || MAX_MESSAGE_LEN < length ) {
+          TOLOG(LOG_ERR, "Invalid message length");
+          return RESULT_FAILURE;
+        }
+        memcpy(ctx.message, optarg, length);
+        break;
+      case S_OPT_MQTT_VERSION:
+        ctx.mqtt_version = atoi( optarg );
+        break;
+      case S_OPT_PASSWORD:
+        length = strlen( optarg );
+        if(length > sizeof(ctx.password) / sizeof(char) ) {
+          TOLOG(LOG_ERR, "Invalid password length");
+        }
+        memcpy(ctx.password, optarg, length);        
+        break;
+      case S_OPT_PORT:
+        length = strlen( optarg );
+        if(length > sizeof(ctx.port_str) / sizeof(char) ) {
+          TOLOG(LOG_ERR, "Invalid IP format");
+        }
+        memcpy(ctx.port_str, optarg, length);
+        ctx.port = atoi( optarg );
+        break;
+      case S_OPT_PUBLISH:
+        if(ctx.subscribe == 1 || ctx.publish == 1) {
+          TOLOG(LOG_ERR, "Invalid combination - subscribe and publish");
+          return RESULT_FAILURE;
+        }
+        ctx.publish = 1;
+        break;
+      case S_OPT_REUSE_ADDR:
+        ctx.optval_reuse_addr = 1;
+        break;
+      case S_OPT_SUBSCRIBE:
+        if(ctx.subscribe == 1 || ctx.publish == 1) {
+          TOLOG(LOG_ERR, "Invalid combination - subscribe and publish");
+          return RESULT_FAILURE;
+        }
+        ctx.subscribe = 1;
+        break;
+      case S_OPT_TOPIC:
+        length = strlen( optarg );
+        if( MIN_TOPIC_LEN > length || MAX_TOPIC_LEN < length ) {
+          TOLOG(LOG_ERR, "Invalid topic length");
+          return RESULT_FAILURE;
+        }
+        memcpy(ctx.topic, optarg, length);
         break;
       case S_OPT_USERID:
         length = strlen( optarg );
@@ -96,62 +188,10 @@ int validate_args(int argc, char **argv) {
         }
         memcpy(ctx.username, optarg, length);        
         break;
-      case S_OPT_PASSWORD:
-        length = strlen( optarg );
-        printf("length = %ld\r\n", length);
-        if(length > sizeof(ctx.password) / sizeof(char) ) {
-          TOLOG(LOG_ERR, "Invalid password length");
-        }
-        memcpy(ctx.password, optarg, length);        
-        break;
-      case S_OPT_HOST:
-        length = strlen( optarg );
-        if(length > sizeof(ctx.ip) / sizeof(char) ) {
-          TOLOG(LOG_ERR, "Invalid IP format");
-        }
-        memcpy(ctx.ip, optarg, length);
-        break;
-      case S_OPT_PORT:
-        ctx.port = atoi( optarg );
-        break;
-      case S_OPT_BUFFER_SIZE:
-        ctx.buffer_size = atoi( optarg );
-        break;
-      case S_OPT_REUSE_ADDR:
-        ctx.optval_reuse_addr = 1;
-        break;
-      case S_OPT_SUBSCRIBE:
-        if(ctx.subscribe == 1 || ctx.publish == 1) {
-          TOLOG(LOG_ERR, "Invalid combination - subscribe and publish");
-          return RESULT_FAILURE;
-        }
-        ctx.subscribe = 1;
-        break;
-      case S_OPT_PUBLISH:
-        if(ctx.subscribe == 1 || ctx.publish == 1) {
-          TOLOG(LOG_ERR, "Invalid combination - subscribe and publish");
-          return RESULT_FAILURE;
-        }
-        ctx.publish = 1;
-        break;
-      case S_OPT_TOPIC:
-        length = strlen( optarg );
-        if( MIN_TOPIC_LEN > length || MAX_TOPIC_LEN < length ) {
-          TOLOG(LOG_ERR, "Invalid topic length");
-          return RESULT_FAILURE;
-        }
-        memcpy(ctx.topic, optarg, length);
-        break;
-      case S_OPT_MESSAGE:
-        length = strlen( optarg );
-        if( MIN_MESSAGE_LEN > length || MAX_MESSAGE_LEN < length ) {
-          TOLOG(LOG_ERR, "Invalid message length");
-          return RESULT_FAILURE;
-        }
-        memcpy(ctx.message, optarg, length);
-        break;
-      case S_OPT_MQTT_VERSION:
-        ctx.mqtt_version = atoi( optarg );
+      case S_OPT_VERBOSE:
+        ctx.verbose = 1;
+        ctx.log_fd = stdout;
+        ctx.log_max_level = LOG_INFO;
         break;
       case '?':
         return RESULT_FAILURE;
@@ -213,6 +253,8 @@ void usage(const char* program) {
   printf("       %s %s", program, "--pub [options]\r\n");
   printf("       %s %s", program, "--sub [options]\r\n");
   printf("OPTIONS\r\n");
+  printf(" --%s <file>\r\n\t%s\r\n",                                      L_OPT_CAFILE,        "Sets a path to the file of CA certificates in PEM format.");
+  printf(" --%s <dir>\r\n\t%s\r\n",                                       L_OPT_CAPATH,        "Sets a directory containing CA certificates in PEM format.");
   printf(" -%c user_id, --%s user_id\r\n\t%s\r\n",     S_OPT_USERID,      L_OPT_USERID,        "Sets user_id used during CONNECT packet creation. If not specified user_id is auto generated.");
   printf(" -%c user_name, --%s user_name\r\n\t%s\r\n", S_OPT_USERNAME,    L_OPT_USERNAME,      "Sets user_name used during CONNECT packet creation.");
   printf(" -%c password, --%s password\r\n\t%s\r\n",   S_OPT_PASSWORD,    L_OPT_PASSWORD,      "Sets password used during CONNECT packet creation.");
@@ -238,6 +280,7 @@ void show_info() {
   printf("\r\n");
   printf("         IP: %s\r\n", ctx.ip);
   printf("       Port: %d\r\n", ctx.port);
+  printf("        TLS: %s\r\n", (ctx.tls) ? "enabled" : "disabled" );
 }
 
 void log_write(int level, char* filename, int line, char *fmt,...) {
@@ -307,62 +350,82 @@ void log_write(int level, char* filename, int line, char *fmt,...) {
   fputc( '\n', ctx.log_fd );
 }
 
-int send_data(int sock, uint8_t *buf, size_t *length, uint8_t *log_str, size_t log_str_len) {
+int send_data(int sock, SSL *ssl, uint8_t *buf, size_t *length, uint8_t *log_str, size_t log_str_len) {
   fd_set writefds;
   struct timeval tv;
   int result = RESULT_OK;
-  size_t send_len;
-
-  tv.tv_sec = 0;
-	tv.tv_usec = 0;
+  ssize_t send_len;
+  long ssl_result;
 
   if(*length == 0) {
     return RESULT_OK;
   }
 
-  /* Prepare the read and write socket sets for network I/O notification */
-  FD_ZERO(&writefds);
-  /* Set read and write notification for the socket */
-  FD_SET(sock, &writefds);
-
-  /* Wait until data could be send or timeout will raised */
-  if( -1 == (result = select( sock+1, NULL, &writefds, NULL, &tv)) ) {
-    if(EINTR == errno ) {
-      return RESULT_EXIT;
-    }
-    else {
-      TOLOG(LOG_ERR,"select( ... ), errno = %d", errno);
-       return RESULT_FAILURE;
+  if(ctx.tls) {
+    if( !SSL_write_ex(ssl, buf, *length, &send_len)) {
+      ssl_result = SSL_get_error(ssl, 0);
+      if( SSL_ERROR_WANT_READ == ssl_result) {
+        return RESULT_OK;
+      }
+      else if ( SSL_ERROR_WANT_READ == ssl_result) {
+        return RESULT_OK;
+      }
+      else if ( SSL_ERROR_ZERO_RETURN == ssl_result) {
+        return RESULT_FAILURE;
+      }
     }
   }
-  else if(result == 0) {
-    /* timeout */
-    return RESULT_FAILURE;
-  }
+  else {
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;    
+    /* Prepare the read and write socket sets for network I/O notification */
+    FD_ZERO(&writefds);
+    /* Set read and write notification for the socket */
+    FD_SET(sock, &writefds);
 
-  /* Check if send could be performed */
-  if (FD_ISSET(sock, &writefds)) {
-    if( -1 == (send_len = send(sock, buf, *length, 0))) {
-      if(errno == ECONNRESET) {
-        TOLOG(LOG_INFO,"Connection reset");
+    /* Wait until data could be send or timeout will raised */
+    if( -1 == (result = select( sock+1, NULL, &writefds, NULL, &tv)) ) {
+      if(EINTR == errno ) {
         return RESULT_EXIT;
       }
-      TOLOG(LOG_WARNING,"send( ... ), errno = %d", errno);
+      else {
+        TOLOG(LOG_ERR,"select( ... ), errno = %d", errno);
+        return RESULT_FAILURE;
+      }
+    }
+    else if(result == 0) {
+      /* timeout */
       return RESULT_FAILURE;
     }
-    if(ctx.verbose) {
-      memset(log_str, 0x00, log_str_len);
-      format_data(buf, send_len, log_str, log_str_len);
-      log_str[1] = '<';
-      log_str[2] = '=';
-      printf("%s\r\n", log_str);
-    }
+    /* Check if send could be performed */
+    if (FD_ISSET(sock, &writefds)) {
+      if(ctx.tls && -1 == SSL_write(ssl, buf, *length) ) {
+        TOLOG(LOG_WARNING,"SSL_write( ... )");
+        return RESULT_FAILURE;
+      }
+      else if( -1 == (send_len = send(sock, buf, *length, 0))) {
+        if(errno == ECONNRESET) {
+          TOLOG(LOG_INFO,"Connection reset");
+          return RESULT_EXIT;
+        }
+        TOLOG(LOG_WARNING,"send( ... ), errno = %d", errno);
+        return RESULT_FAILURE;
+      }
+    }    
+  }
+
+  if(ctx.verbose) {
+    memset(log_str, 0x00, log_str_len);
+    format_data(buf, send_len, log_str, log_str_len);
+    log_str[1] = '<';
+    log_str[2] = '=';
+    printf("%s\r\n", log_str);
   }
 
   return RESULT_OK;
 }
 
-int process_and_send_data(int sock, mqtt_cli_t *cli, clv_t *data, mqtt_channel_t *channel, uint8_t *log_str, size_t log_str_len) {
+int process_and_send_data(int sock, SSL *ssl, mqtt_cli_t *cli, clv_t *data, mqtt_channel_t *channel, uint8_t *log_str, size_t log_str_len) {
   fd_set writefds;
   struct timeval tv;
   int result = RESULT_OK;
@@ -382,7 +445,7 @@ int process_and_send_data(int sock, mqtt_cli_t *cli, clv_t *data, mqtt_channel_t
     }
 
     if( data->length ) {
-      if( (result = send_data(sock, data->value, &(data->length), log_str, log_str_len)) != RESULT_OK) {
+      if( (result = send_data(sock, ssl, data->value, &(data->length), log_str, log_str_len)) != RESULT_OK) {
         break;
       }
     }
@@ -474,13 +537,14 @@ int main(int argc, char** argv) {
   uint8_t *send_buf = NULL, *recv_buf = NULL;
   uint16_t rc;
   uint32_t srv_ip;
-  size_t length, recv_buf_len, recv_buf_off, send_buf_len, recv_len, i;
+  size_t length, recv_buf_len, recv_buf_off, send_buf_len, i;
+  ssize_t recv_len;
   char *log_str = NULL, c;
-  int result, optval, ret, log_str_len, sock;
+  int result, optval, ret, log_str_len, sock = 0;
   struct sigaction sa;
   struct sockaddr_in server;
   struct hostent *host = NULL;
-  fd_set readfds;
+  fd_set fds;
   struct timeval tv;
   mqtt_cli_t cli;
   mqtt_channel_t channel;
@@ -490,6 +554,11 @@ int main(int argc, char** argv) {
   mqtt_publish_params_t publish_params;
   mqtt_subscribe_params_t subscribe_params;
   mqtt_params_t mqtt_params = {};
+  const SSL_METHOD *method;
+  SSL_CTX *ssl_ctx = NULL;
+  SSL *ssl = NULL;
+  BIO *bio = NULL;
+  long ssl_result;
 
   /* Initialize */
   memset( &cli, 0x00, sizeof(cli));
@@ -498,7 +567,6 @@ int main(int argc, char** argv) {
   if(validate_args(argc, argv)) {
     usage(argv[0]);
     result = RESULT_FAILURE;
-    TOLOG(LOG_ERR, "test");
     goto finish;
   }
 
@@ -535,6 +603,57 @@ int main(int argc, char** argv) {
   /* Configure signal handler to stop the program on Ctrl+C pressed */
   sigaction(SIGINT, &sa, NULL);
 
+  /* Initialize OpenSSL (if any) */
+  if(ctx.tls) {
+    /* We want an SSL_CTX for creating clients so we use TLS_client_method() here */
+    if( NULL == (method = TLS_client_method())) {
+      TOLOG(LOG_CRIT, "TLS_client_method() failed");
+      result = RESULT_FAILURE;
+      goto finish;          
+    }
+    /* Create an SSL_CTX which we can use to create SSL objects from */
+    if ( NULL == (ssl_ctx = SSL_CTX_new(method))) {
+      TOLOG(LOG_CRIT, "Unable to create a new SSL context structure");
+      result = RESULT_FAILURE;
+      goto finish;      
+    }
+    /* Configure the client to abort the handshake if certificate verification fails. 
+       Virtually all clients should do this unless you really know what you are doing. */
+    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+    /* Load the CA certificate */
+    printf("%s\r\n", ctx.cafile);
+    if( !SSL_CTX_load_verify_locations(ssl_ctx, ctx.cafile, ctx.capath)) {
+      TOLOG(LOG_CRIT, "SSL_CTX_load_verify_locations() failed");
+      result = RESULT_FAILURE;
+      goto finish;
+    }
+    /* Set user's certificate */
+    if( NULL != ctx.cert && !SSL_CTX_use_certificate_file(ssl_ctx, ctx.cert, SSL_FILETYPE_PEM)) {
+      TOLOG(LOG_CRIT, "SSL_CTX_use_certificate_file() failed");
+      result = RESULT_FAILURE;
+      goto finish;        
+    }
+    /* Set user's certificate private key */
+    if( NULL != ctx.key && !SSL_CTX_use_PrivateKey_file(ssl_ctx, ctx.key, SSL_FILETYPE_PEM)) {
+      TOLOG(LOG_CRIT, "SSL_CTX_use_PrivateKey_file() failed");
+      result = RESULT_FAILURE;
+      goto finish;        
+    }
+    /* TLSv1.1 or earlier are deprecated by IETF and are generally to be
+       avoided if possible. We require a minimum TLS version of TLSv1.2. */
+    if (!SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_2_VERSION)) {
+      TOLOG(LOG_CRIT, "Failed to set the minimum TLS protocol version");
+      result = RESULT_FAILURE;
+      goto finish;    
+    }
+    /* Create an SSL object to represent the TLS connection */
+    if ( NULL == (ssl = SSL_new(ssl_ctx))) {
+      TOLOG(LOG_CRIT, "Failed to create the SSL object");
+      result = RESULT_FAILURE;
+      goto finish;    
+    }
+  }
+
   /* Create the TCP/IP socket */
 	if( -1 == (sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))) {
 		TOLOG(LOG_CRIT, "socket(AF_INET, SOCK_STREAM, IPPROTO_TCP), errno = %d", errno);
@@ -542,6 +661,7 @@ int main(int argc, char** argv) {
     goto finish;
 	}
 
+  memset( &server, 0x00, sizeof(server) );
   server.sin_family = AF_INET;
   server.sin_port = htons( ctx.port );
   server.sin_addr.s_addr = inet_addr( ctx.ip );
@@ -645,15 +765,82 @@ int main(int argc, char** argv) {
     result = RESULT_FAILURE;
     goto finish;
   }
-  if(ctx.verbose) {
-    printf("OK\r\n");
-  }
-
   /* Start non-blocking mode */
   if( -1 == ioctl(sock, FIONBIO, (char*) &ctx.non_blocking) ) {
     TOLOG(LOG_ERR,"ioctl(sock, FIONBIO, ... ), errno = %d", errno);
     result = RESULT_FAILURE;
     goto finish;
+  }  
+  if(ctx.tls) {
+    /* Create a BIO to wrap the socket */
+    if ( NULL == (bio = BIO_new(BIO_s_socket())) ) {
+      TOLOG(LOG_ERR,"BIO_new() failed");
+      result = RESULT_FAILURE;
+      goto finish;  
+    }
+    /*
+    * Associate the newly created BIO with the underlying socket. By
+    * passing BIO_CLOSE here the socket will be automatically closed when
+    * the BIO is freed. Alternatively you can use BIO_NOCLOSE, in which
+    * case you must close the socket explicitly when it is no longer
+    * needed.
+    */
+    BIO_set_fd(bio, sock, BIO_NOCLOSE);
+    /* Associate the SSL object we created earlier with the BIO */
+    SSL_set_bio(ssl, bio, bio);
+    /*
+    * Tell the server during the handshake which hostname we are attempting
+    * to connect to in case the server supports multiple hosts.
+    */
+    if (!SSL_set_tlsext_host_name(ssl, ctx.ip)) {
+      TOLOG(LOG_ERR,"Failed to set the SNI hostname");
+      result = RESULT_FAILURE;
+      goto finish;  
+    }
+    /*
+    * Ensure we check during certificate verification that the server has
+    * supplied a certificate for the hostname that we were expecting.
+    * Virtually all clients should do this unless you really know what you
+    * are doing.
+    */
+    if (!SSL_set1_host(ssl, ctx.ip)) {
+      TOLOG(LOG_ERR,"Failed to set the certificate verification hostname");
+      result = RESULT_FAILURE;
+      goto finish;  
+    }
+
+    /* Do the handshake with the server */
+    while ((result = SSL_connect(ssl)) != 1) {
+      FD_ZERO(&fds);
+      FD_SET(sock, &fds);
+
+      if (SSL_ERROR_WANT_WRITE == result) {
+        select(sock + 1, NULL, &fds, NULL, NULL);
+        continue;
+      }
+      else if (SSL_ERROR_WANT_READ == result) {
+        select(sock + 1, &fds, NULL, NULL, NULL);
+        continue;
+      }
+      else if(EAGAIN == errno || EWOULDBLOCK == errno) {
+        continue;
+      }
+      TOLOG(LOG_ERR,"Could not build a SSL session, result %d", result);
+      /*
+      * If the failure is due to a verification error we can get more
+      * information about it from SSL_get_verify_result().
+      */
+      ssl_result = SSL_get_verify_result(ssl);
+      if ( X509_V_OK != ssl_result) {
+        TOLOG(LOG_ERR,"Verify error: %s", X509_verify_cert_error_string( ssl_result ));
+      }
+      result = RESULT_FAILURE;
+      goto finish;      
+    }
+  }
+
+  if(ctx.verbose) {
+    printf("OK\r\n");
   }
 
 	/* Configure the timer to expire after n sec... */
@@ -689,7 +876,7 @@ int main(int argc, char** argv) {
       channel.ip_address = 0;
       channel.user_id = 0;
       data.length = 0;
-      result = process_and_send_data(sock, &cli, &data, &channel, log_str, log_str_len);
+      result = process_and_send_data(sock, ssl, &cli, &data, &channel, log_str, log_str_len);
       if(result == RESULT_FAILURE) {
         TOLOG(LOG_ERR, "Sending failed");
         break;
@@ -699,12 +886,15 @@ int main(int argc, char** argv) {
         break;
       }    
     }
+    if(ssl != NULL) {
+      sock = SSL_get_fd(ssl);
+    }
     /* Prepare the read socket sets for network I/O notification */
-    FD_ZERO(&readfds);
+    FD_ZERO(&fds);
     /* Set read notification for the socket */
-    FD_SET(sock, &readfds);
+    FD_SET(sock, &fds);
 	  /* Wait until the socket has data ready to be read (until timeout occurs) */
-	  if( -1 == (result = select( sock+1, &readfds, NULL, NULL, &tv)) ) {
+	  if( -1 == (result = select( sock+1, &fds, NULL, NULL, &tv)) ) {
       if(EINTR == errno ) {
         continue;
       }
@@ -718,32 +908,53 @@ int main(int argc, char** argv) {
       ;
     }
     /* Check if there is something to read */
-	  else if (FD_ISSET(sock, &readfds)) {
+	  else if (FD_ISSET(sock, &fds)) {
       /* Receive and process */
       while( 1 ) {
         if(recv_buf_off < 0) {
           TOLOG(LOG_ERR, "It was impossible to receive all data,");
           goto finish;
         }
-
-        recv_len = recv(sock, recv_buf+recv_buf_off, recv_buf_len, 0);
-
-        if( recv_len < 0) {
-          if(errno == EWOULDBLOCK) {
-            break;
-          }
-          else if(errno == ECONNRESET) {
-            TOLOG(LOG_INFO,"Connection reset");
-            goto finish;
-          }
-          else {
-            TOLOG(LOG_ERR,"recv( ... ), errno = %d", errno);
-            goto finish;
+        if(ctx.tls) {
+          recv_len = 0;
+          ERR_clear_error();
+          while( !SSL_read_ex(ssl, recv_buf+recv_buf_off, recv_buf_len, &recv_len) ) {
+            ssl_result = SSL_get_error(ssl, 0);
+            if( SSL_ERROR_ZERO_RETURN == ssl_result) {
+              TOLOG(LOG_INFO,"Connection reset by peer");
+              goto finish;
+            }
+            else if( SSL_ERROR_WANT_READ == ssl_result) {
+              break;
+            }
+            else if(SSL_ERROR_WANT_WRITE == ssl_result) {
+              break;
+            }
+            else {
+              TOLOG(LOG_ERR,"SSL_read_ex( ... ), error = %d", ssl_result);
+              goto finish;
+            }
           }
         }
-        else if(recv_len == 0) {
-          TOLOG(LOG_INFO,"Connection reset by peer");
-          goto finish;
+        else {
+          recv_len = recv(sock, recv_buf+recv_buf_off, recv_buf_len, 0);
+          if( recv_len < 0) {
+            if(errno == EWOULDBLOCK) {
+              break;
+            }
+            else if(errno == ECONNRESET) {
+              TOLOG(LOG_INFO,"Connection reset");
+              goto finish;
+            }
+            else {
+              TOLOG(LOG_ERR,"recv( ... ), errno = %d", errno);
+              goto finish;
+            }
+          }
+          else if(recv_len == 0) {
+            TOLOG(LOG_INFO,"Connection reset by peer");
+            goto finish;
+          }
         }
 
         recv_buf_len -= recv_len;
@@ -771,7 +982,7 @@ int main(int argc, char** argv) {
           channel.ip_address = srv_ip;
           channel.user_id = 0;
           data.length = length;
-          result = process_and_send_data(sock, &cli, &data, &channel, log_str, log_str_len);
+          result = process_and_send_data(sock, ssl, &cli, &data, &channel, log_str, log_str_len);
           if(result == RESULT_FAILURE) {
             TOLOG(LOG_ERR, "Sending failed");
             break;
@@ -794,20 +1005,40 @@ int main(int argc, char** argv) {
 
 finish:
   /* Close the socket if necessary */
-  if(sock) {
+  if( 0 < sock) {
     close( sock );
   }
-  if(NULL != log_str) {
+  /* Shutdown the SSL connection */
+  if( NULL != ssl ) {
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+  }
+  if( NULL != ssl_ctx ) {
+    SSL_CTX_free(ssl_ctx);
+  }
+  if( NULL != log_str ) {
     free( log_str );
   }
-  if(NULL != recv_buf) {
+  if( NULL != recv_buf ) {
     free( recv_buf );
   }
-  if(NULL != send_buf) {
+  if( NULL != send_buf ) {
     free( send_buf );
   }
+  if( NULL != ctx.cafile) {
+    free( ctx.cafile );
+  }
+  if( NULL != ctx.capath) {
+    free( ctx.capath );
+  }
+  if( NULL != ctx.cert) {
+    free( ctx.cert );
+  }
+  if( NULL != ctx.key) {
+    free( ctx.key );
+  }
   /* Destroy client */
-  if( NULL != cli.ctx) {
+  if( NULL != cli.ctx ) {
     mqtt_cli_destr( &cli );
   }
   return result;
