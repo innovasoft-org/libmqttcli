@@ -6,10 +6,17 @@ project(mqtt
   HOMEPAGE_URL "innovasoft.org"
 )
 
+# Enable OpenSSL
+find_package(OpenSSL REQUIRED)
+
 # Collect the sources
 add_executable(mqtt
   main.c
   utils.c
+)
+
+target_link_libraries(mqtt 
+  OpenSSL::SSL
 )
 
 target_link_libraries(mqtt
