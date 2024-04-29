@@ -39,15 +39,15 @@ The first step is to initialize the library. It shall be performed as follows:
 ```C
 uint16_t rc
 mqtt_cli cli;
-mqtt_params_t params = {.bufsize=2048, .timeout=1};
+mqtt_params_t params = {.bufsize=2048, .timeout=1, .version=5};
 
-if(MQTT_SUCCESS != (rc = mqtt_cli_init( &cli, &params )) {
+if(MQTT_SUCCESS != (rc = mqtt_cli_init_ex( &cli, &params )) {
   /* ... error processing ... */
 }
 ```
 > [!NOTE]
-> - if *rc* is equal to *MQTT_OUT_OF_MEM* then it means there is not enough memory to initialize the library
-> - if *rc* is equal to *MQTT_INVALID_ARGS* then it means specified *params* are incorrect
+> - if `rc` is equal to `MQTT_OUT_OF_MEM` then it means there is not enough memory to initialize the library
+> - if `rc` is equal to `MQTT_INVALID_ARGS` then it means specified *params* are incorrect
 ### Configuring the library
 The second step is to configure the library:
 ```C
@@ -60,6 +60,8 @@ mqtt_cli cli;
 cli.set_br_ip( &cli, srv_ip);
 cli.set_br_keepalive( &cli, keep_alive );
 ```
+> [!NOTE]
+> Setting broker's IP is optional
 ### Processing the data
 ```C
 uint16_t rc = MQTT_SUCCESS;
@@ -82,6 +84,8 @@ do {
 
 } while( rc == MQTT_PENDING_DATA );
 ```
+> [!NOTE]
+> If `channel` parameters is set to `NULL`, then in the following `process` functions it also shall be set to `NULL`
 ### Preparing *PUBLISH* package
 ```C
 const char *topic = "sensor01";
