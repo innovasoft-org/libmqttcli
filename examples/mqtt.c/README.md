@@ -2,8 +2,8 @@
 ## NAME
 &emsp;mqtt - publishes or subscribes packets using MQTT protocol
 ## SYNOPSIS
-&emsp;mqtt _--pub [-I user_id] [-N user_name] [-P password] [-b size] [-h host] [-m message] [-p port] [-t topic] [-v]_  
-&emsp;mqtt _--sub [-I user_id] [-N user_name] [-P password] [-b size] [-h host] [-p port] [-t topic] [v]_  
+&emsp;mqtt _--pub [-b size] [--cafile file] [--capath dir] [--cert file] [-h host] [--key file] [-m message] [--mqtt-version version] [-P password] [-p port] [--reuse-addr] [-t topic] [-I user_id] [-N user_name] [-v]_  
+&emsp;mqtt _--sub [-b size] [--cafile file] [--capath dir] [--cert file] [-h host] [--key file] [--mqtt-version version] [-P password] [-p port] [--reuse-addr] [-t topic] [-I user_id] [-N user_name] [-v]_  
 ## DESCRIPTION
 &emsp;Connects to the broker using specified credentials and publishes to specified topic or starts waiting for subscribed topic.
 
@@ -14,7 +14,7 @@
 &emsp;_--capath dir_  
 &emsp;&emsp;Sets a directory containing CA certificates in PEM format. By default none _capath_ is used.  
 &emsp;_--cert client's certificate_  
-&emsp;&emsp;Sets the path to the clients's certificate. By default none _cert_ is used.  
+&emsp;&emsp;Sets the path to the clients's certificate in PEM format. By default none _cert_ is used.  
 &emsp;_-h host, --host host_  
 &emsp;&emsp;Uses specified host to connect to. By default localhost is used.  
 &emsp;_--key client's certificate private key_  
