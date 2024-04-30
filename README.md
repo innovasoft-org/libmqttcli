@@ -6,7 +6,7 @@ All referenced product or service names and trademarks are the property of their
 | MQTT | MQTT is an OASIS standard messaging protocol for the Internet of Things (IoT). It is designed as an extremely lightweight publish/subscribe messaging transport that is ideal for connecting remote devices with a small code footprint and minimal network bandwidth. MQTT today is used in a wide variety of industries, such as automotive, manufacturing, telecommunications, oil and gas, etc. [^1] |
 | PlantUML | PlantUML is a versatile component that enables swift and straightforward diagram creation. Users can draft a variety of diagrams using a simple and intuitive language.[^2]|
 | Home Assistant| Open source home automation that puts local control and privacy first. Powered by a worldwide community of tinkerers and DIY enthusiasts. Perfect to run on a Raspberry Pi or a local server.[^3] |
-| OpenSSL | The OpenSSL Project develops and maintains the OpenSSL software - a robust, commercial-grade, full-featured toolkit for general-purpose cryptography and secure communication.[^5] |
+| OpenSSL | The OpenSSL Project develops and maintains the OpenSSL software - a robust, commercial-grade, full-featured toolkit for general-purpose cryptography and secure communication.[^4] |
 ## Introduction
 The aim of this repo is to demonstrate possibilities as well as usage of the `libmqttcli.a` library.
 ## Features
@@ -15,7 +15,7 @@ The aim of this repo is to demonstrate possibilities as well as usage of the `li
 - Supports QoS levels: 0 and 1
 - Is relatively easy to use. The user does not need to know details of the MQTT protocol. The library automatically prepares the following packets: `CONNECT`, `AUTH`, `DISCONNECT`, `PUBACK` and `PINGREQ`. The user via library interface is allowed to prepare the following packets: `PUBLISH`, `SUBSCRIBE` and `DISCONNECT`.
 - The whole library contains proprietary implementation. There are no third party implementations included. The following external standard functions are used: `malloc`, `memcpy` and `memcmp`.
-- The library is totally written in C89[^4] standard.
+- The library is totally written in C89[^5] standard.
 - The library does not establish any internet connection. Received or prepared packets shall be exchanged by the user.
 - Specific behavior could be added using callback functions, e.g., client authentication to the broker.
 ## Usage
@@ -229,5 +229,5 @@ mqtt_cli_destr( &cli );
 [^1]: [https://mqtt.org](https://mqtt.org)
 [^2]: [https://plantuml.com](https://plantuml.com)
 [^3]: [https://www.home-assistant.io](https://www.home-assistant.io)
-[^4]: [https://web.archive.org/web/20200909074736if_/https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf](https://web.archive.org/web/20200909074736if_/https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf)
-[^5]: [https://www.openssl.org](https://www.openssl.org)
+[^4]: [https://www.openssl.org](https://www.openssl.org)
+[^5]: [https://web.archive.org/web/20200909074736if_/https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf](https://web.archive.org/web/20200909074736if_/https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf)
