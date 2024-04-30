@@ -8,7 +8,7 @@ All referenced product or service names and trademarks are the property of their
 | Home Assistant| Open source home automation that puts local control and privacy first. Powered by a worldwide community of tinkerers and DIY enthusiasts. Perfect to run on a Raspberry Pi or a local server.[^3] |
 | OpenSSL | The OpenSSL Project develops and maintains the OpenSSL software - a robust, commercial-grade, full-featured toolkit for general-purpose cryptography and secure communication.[^4] |
 ## Introduction
-The aim of this repo is to demonstrate possibilities as well as usage of the `libmqttcli.a` library.
+The aim of this repo is to demonstrate possibilities as well as usage of the `libmqttcli` library.
 ## Features
 - Supports the client side of the MQTT[^1] protocol.
 - Supports MQTT[^1] versions: 3.1.1 and 5.0
