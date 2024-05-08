@@ -110,14 +110,16 @@ if(MQTT_SUCCESS != cli.publish_ex( &cli, &params, &data)) {
 ```C
 static const char* base_topic = "homeassistant/switch/hadev123456";
 static const char* state_topic = "state";
+static uint8_t buffer[1024];
+static clv_t *data;
 
 mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
   mqtt_rc_t rc = RC_SUCCESS;
   mqtt_publish_params_t publish_params = { };
 
   /* Publishing current state */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, state_topic );
+  publish_params.topic.value = data->value;
+  publish_params.topic.length = sprintf( data->value, "%s/%s", base_topic, state_topic );
   publish_params.message = pkt->message;
   if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
     rc =  RC_IMPL_SPEC_ERR;
@@ -128,9 +130,19 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
 
 int main() {
   uint16_t rc = MQTT_SUCCESS;
+  uint8_t *tmp_buf = NULL;
   mqtt_cli cli;
-  clv_t data = { };
   mqtt_channel_t channel = { };
+
+  if( NULL == (data = (clv_t*) malloc( sizeof( clv_t ) ) ) ) {
+    /* ... error processing ... */
+  }
+
+  if( NULL == (tmp_buf = malloc( sizeof(buffer) / sizeof(uint8_t) ) ) ) {
+    /* ... error processing ... */
+  }
+
+  memcpy( data, &(clv_t) { .capacity=sizeof(buffer)/sizeof(uint8_t), .length=0, .value=tmp_buf }, sizeof(clv_t) );
 
   /* ... initializing and configuring the library ... */
 
@@ -171,14 +183,16 @@ if(MQTT_SUCCESS != self->subscribe(&cli, &subscribe_params, &data)) {
 ```C
 static const char* base_topic = "homeassistant/switch/hadev123456";
 static const char* command_topic = "set";
+static uint8_t buffer[1024];
+static clv_t *data;
 
 mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
   mqtt_rc_t rc = RC_SUCCESS;
   mqtt_subscribe_params_t subscribe_params = { };
 
   /* Subscribing to receive commands */
-  subscribe_params.filter.value = buffer->value;
-  subscribe_params.filter.length = sprintf( buffer->value, "%s/%s", base_topic, command_topic );
+  subscribe_params.filter.value = data->value;
+  subscribe_params.filter.length = sprintf( data->value, "%s/%s", base_topic, command_topic );
   if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
     rc =  RC_IMPL_SPEC_ERR;
   }
@@ -188,9 +202,19 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
 
 int main() {
   uint16_t rc = MQTT_SUCCESS;
+  uint8_t *tmp_buf = NULL;
   mqtt_cli cli;
-  clv_t data = { };
   mqtt_channel_t channel = { };
+
+  if( NULL == (data = (clv_t*) malloc( sizeof( clv_t ) ) ) ) {
+    /* ... error processing ... */
+  }
+
+  if( NULL == (tmp_buf = malloc( sizeof(buffer) / sizeof(uint8_t) ) ) ) {
+    /* ... error processing ... */
+  }
+
+  memcpy( data, &(clv_t) { .capacity=sizeof(buffer)/sizeof(uint8_t), .length=0, .value=tmp_buf }, sizeof(clv_t) );
 
   /* ... initializing and configuring the library ... */
 
