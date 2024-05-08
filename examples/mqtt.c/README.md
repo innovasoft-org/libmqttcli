@@ -21,7 +21,7 @@
 &emsp;&emsp;Sets the path to the clients's certificate private key. By default none _key_ is used.  
 &emsp;_-m message, --message message_  
 &emsp;&emsp;Uses specified application message to publish it. By default empty message is used.  
-&emsp;_--mqtt-version_  
+&emsp;_--mqtt-version version_  
 &emsp;&emsp;Sets the MQTT protocol version to be used. Values `4` and `5` are allowed. By default `5` is used.  
 &emsp;_-P password, --password password_  
 &emsp;&emsp;Uses specified password. By default none password is iused.   
