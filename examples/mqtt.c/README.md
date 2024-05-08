@@ -28,7 +28,7 @@
 &emsp;_-p port, --port port_  
 &emsp;&emsp;Uses specified port number to connect to. By default 1884 port is used.  
 &emsp;_--reuse-addr_  
-&emsp;&emsp;Indicates that the rules used in validating addresses supplied in a `bind` call should allow reuse of local addresses. By default this option is disabled. 
+&emsp;&emsp;Indicates that the rules used in validating addresses supplied in a `bind` call should allow reuse of local addresses. By default this option is disabled.  
 &emsp;_-t topic, --topic topic_  
 &emsp;&emsp;Uses specified topic to publish it or subscribe to it. This option is mandatory.  
 &emsp;_-I user_id, --userid user_id_  
