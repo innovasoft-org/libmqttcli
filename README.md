@@ -14,7 +14,7 @@ The aim of this repo is to demonstrate possibilities as well as usage of the `li
 - Supports MQTT[^1] versions: 3.1.1 and 5.0
 - Supports QoS levels: 0 and 1
 - Is relatively easy to use. The user does not need to know details of the MQTT protocol. The library automatically prepares the following packets: `CONNECT`, `AUTH`, `DISCONNECT`, `PUBACK` and `PINGREQ`. The user via library interface is allowed to prepare the following packets: `PUBLISH`, `SUBSCRIBE`, `UNSUBSCRIBE` and `DISCONNECT`.
-- The whole library contains proprietary implementation. There are no third party implementations included. The following external standard functions are used: `malloc`, `memcpy`, `memset` and `memcmp`.
+- The library contains only the proprietary implementation. There are no third party implementations included. The following external standard functions are used: `malloc`, `memcpy`, `memset` and `memcmp`.
 - The library is totally written in C89[^5] standard.
 - The library is platform independent. It does not establish any internet connection. Received or prepared packets shall be exchanged by the user.
 - Specific behavior could be added using callback functions, e.g., client authentication to the broker.
