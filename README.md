@@ -93,14 +93,14 @@ const char *topic = "sensor01";
 const char *message = "ON";
 uint8_t buffer[1024] = { 0 };
 clv_t data = { .capacity=sizeof(buffer)/sizeof(uint8_t), .value=buffer };
-mqtt_publish_params_t params = { };
+mqtt_publish_params_t publish_params = { };
 mqtt_cli cli;
 
 /* ... initializing and configuring the library ... */
 
-params.message = (lv_t) { .length=strlen(message), .value=(uint8_t*)message  };
-params.topic = (lv_t) { .length=strlen(topic), .value=(uint8_t*)topic  };
-if(MQTT_SUCCESS != cli.publish_ex( &cli, &params, &data)) {
+publish_params.message = (lv_t) { .length=strlen(message), .value=(uint8_t*)message  };
+publish_params.topic = (lv_t) { .length=strlen(topic), .value=(uint8_t*)topic  };
+if(MQTT_SUCCESS != cli.publish_ex( &cli, &publish_params, &data)) {
   /* ... error processing ... */
 }
 
@@ -172,7 +172,7 @@ mqtt_cli cli;
 
 /* ... initializing and configuring the library ... */
 
-params.filter = (lv_t) { .length=strlen(topic), .value=(uint8_t*)topic  };
+subscribe_params.filter = (lv_t) { .length=strlen(topic), .value=(uint8_t*)topic  };
 if(MQTT_SUCCESS != self->subscribe(&cli, &subscribe_params, &data)) {
   /* ... error processing ... */
 }
