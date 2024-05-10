@@ -74,7 +74,7 @@ mqtt_channel_t channel = { };
 /* ... initializing and configuring the library ... */
 
 do {
-  rc = cli->process( &cli, &data, &channel);
+  rc = cli.process( &cli, &data, &channel);
   if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
     /* ... error processing ... */
   }
@@ -150,7 +150,7 @@ int main() {
 
   /* ... processing timeout or received packet ... */
   do {
-    rc = cli->process( &cli, data, &channel);
+    rc = cli.process( &cli, data, &channel);
     if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
       /* ... error processing ... */
     }
@@ -173,7 +173,7 @@ mqtt_cli cli;
 /* ... initializing and configuring the library ... */
 
 subscribe_params.filter = (lv_t) { .length=strlen(topic), .value=(uint8_t*)topic  };
-if(MQTT_SUCCESS != self->subscribe(&cli, &subscribe_params, &data)) {
+if(MQTT_SUCCESS != cli.subscribe(&cli, &subscribe_params, &data)) {
   /* ... error processing ... */
 }
 
