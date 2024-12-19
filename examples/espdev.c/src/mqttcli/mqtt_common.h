@@ -76,7 +76,7 @@ struct mqtt_common_ctx;
 #endif
 
 /** Define architecture specific attributes */
-#define __ATTR
+#define __ATTR ICACHE_FLASH_ATTR
 
 /** Packet typed */
 #define PTYPE_NONE        ((uint8_t) 0x00)

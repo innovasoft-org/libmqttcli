@@ -707,6 +707,7 @@ int main(int argc, char** argv) {
   mqtt_params.timeout = 1;
   mqtt_params.version = ctx.mqtt_version;
   mqtt_params.qos = 0;
+  mqtt_params.max_pkt_id = 8;
   if( MQTT_SUCCESS != (rc = mqtt_cli_init_ex( &cli, &mqtt_params )) ) {
     TOLOG(LOG_ERR,"mqtt_cli_init_ex( ... ), rc = %d", rc);
     result = RESULT_FAILURE;
