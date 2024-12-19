@@ -40,7 +40,7 @@ The first step is to initialize the library. It shall be performed as follows:
 ```C
 uint16_t rc
 mqtt_cli cli;
-mqtt_params_t params = {.bufsize=2048, .timeout=1, .version=5};
+mqtt_params_t params = {.bufsize=2048, .max_pkt_id=8, .timeout=1, .version=5};
 
 if(MQTT_SUCCESS != (rc = mqtt_cli_init_ex( &cli, &params )) {
   /* ... error processing ... */
@@ -248,6 +248,7 @@ mqtt_cli_destr( &cli );
 |------|-------------|
 |[mqtt.c](examples/mqtt.c/README.md)| Demonstrates using publish and subscribe packets in MQTT protocol. Could be used as a diagnostic tool. Supports plain as well as secured connections (using the OpenSSL library [^4]). |
 |[hadev.c](examples/hadev.c/README.md)| Simulator of the Home Assistant [^3] device. It is supporting discovery process to automatically add the device in Home Assistant board. |
+|[espdev.c](examples/espdev.c/README.md)| Real implementation for ESP8266 of the Home Assistant [^3] device. It is supporting discovery process to automatically add the device in Home Assistant board. |
 
 ## References
 [^1]: [https://mqtt.org](https://mqtt.org)

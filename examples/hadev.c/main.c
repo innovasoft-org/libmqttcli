@@ -382,33 +382,13 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
   offset += sprintf( message + offset, "\"pl_not_avail\": \"%s\",", payload_not_available);
   offset += sprintf( message + offset, "\"stat_on\": \"%s\",", state_on);
   offset += sprintf( message + offset, "\"stat_off\": \"%s\",", state_off);
-  offset += sprintf( message + offset, "\"ret\": \"true\",");
+  offset += sprintf( message + offset, "\"ret\": \"false\",");
   offset += sprintf( message + offset, "\"opt\": \"false\",");
   offset += sprintf( message + offset, "\"dev\": {\"ids\": \"ea334450945afc\",\"name\": \"acme_dev\",\"mf\": \"ACME\",\"mdl\": \"xya\",\"sw\": \"1.0\",\"sn\": \"ea334450945afc\",\"hw\": \"1.0rev2\"},");
   offset += sprintf( message + offset, "\"o\": {\"name\":\"mqttcli\",\"sw\": \"1.0\",\"url\": \"https://innovasoft.org\"}");
   offset += sprintf( message + offset, "}");
   publish_params.message.length = offset;
   if( MQTT_SUCCESS != self->publish(self, &publish_params) ) {
-    rc =  RC_IMPL_SPEC_ERR;
-    goto finish;   
-  }
-
-  /* Publishing current device availability */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, availability_topic );
-  message = publish_params.message.value = buffer->value + publish_params.topic.length;
-  publish_params.message.length = sprintf( message, "%s", payload_available );
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    rc =  RC_IMPL_SPEC_ERR;
-    goto finish;   
-  }
-
-  /* Publishing current device state */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, state_topic );
-  message = publish_params.message.value = buffer->value + publish_params.topic.length;
-  publish_params.message.length = sprintf( message, "%s", ( toggle > 0 ) ? state_on : state_off );
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
     rc =  RC_IMPL_SPEC_ERR;
     goto finish;   
   }
@@ -423,6 +403,35 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
 
 finish:
   return rc;
+}
+
+void cb_suback(const mqtt_cli_ctx_cb_t *self, const mqtt_suback_t *pkt, const mqtt_channel_t *channel) {
+  uint8_t *message;
+  mqtt_publish_params_t publish_params = { };
+
+  /* Publishing current device availability */
+  publish_params.topic.value = buffer->value;
+  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, availability_topic );
+  message = publish_params.message.value = buffer->value + publish_params.topic.length;
+  publish_params.message.length = sprintf( message, "%s", payload_available );
+  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
+    goto finish;   
+  }
+
+  /* Publishing current device state */
+  publish_params.topic.value = buffer->value;
+  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, state_topic );
+  message = publish_params.message.value = buffer->value + publish_params.topic.length;
+  publish_params.message.length = sprintf( message, "%s", ( toggle > 0 ) ? state_on : state_off );
+  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
+    goto finish;   
+  }
+
+  /* Delay publishing to let HA initialize new device */
+  sleep( 2 );
+
+finish:
+  return;
 }
 
 mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
@@ -468,7 +477,7 @@ int main(int argc, char** argv) {
   lv_t packet, cli_userid, cli_username, cli_password;
   mqtt_publish_params_t publish_params = {  };
   mqtt_will_params_t will_params = (mqtt_will_params_t) { };
-  mqtt_params_t mqtt_params = { .timeout=1, .version=4 };
+  mqtt_params_t mqtt_params = { .max_pkt_id=8, .timeout=1, .version=4 };
 
   /* Initialize */
   memset( &cli, 0x00, sizeof(cli));
@@ -583,6 +592,7 @@ int main(int argc, char** argv) {
   }
   cli.set_cb_connack( &cli, cb_connack );
   cli.set_cb_publish( &cli, cb_publish );
+  cli.set_cb_suback( &cli, cb_suback );
   cli.set_br_ip( &cli, srv_ip);
   cli.set_br_keepalive( &cli, (uint16_t) 60);
   will_params.topic.value = buffer->value;
