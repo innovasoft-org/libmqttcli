@@ -44,8 +44,8 @@
 ## Usage
 1. Log into your HA service
 2. Select `Overview` panel
-3. New `switch` should be dicplayed with the name formatted as follows `ESP-XXXXXXXX` (<a href="#fig02">Fig. 3</a>)
-4. Toggle on the `switch`, it should turn on the connected device (<a href="#fig02">Fig. 4</a>)
+3. New `switch` should be dicplayed with the name formatted as follows `ESP-XXXXXXXX` (<a href="#fig03">Fig. 3</a>)
+4. Toggle on the `switch`, it should turn on the connected device (<a href="#fig04">Fig. 4</a>)
 
 <p align="center">
   <a name="fig03"> 
