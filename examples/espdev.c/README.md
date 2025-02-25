@@ -60,3 +60,7 @@
   <b>Fig. 4. Switch is on. </b>
   </a>
 </p>
+
+> [!NOTE]
+> - To reset the device, hold the button for `6 seconds`
+> - To restore factory settings, hold the button for `11 seconds`
