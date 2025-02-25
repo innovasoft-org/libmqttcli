@@ -16,7 +16,7 @@
 
 ## Configuration
 1. Select the Wi-Fi on your phone/laptop which is formatted as follows `ESP-XXXXXXXX`
-2. In the web browser enter the following web site `http://192.168.4.1`
+2. In the web browser enter the following web site `http://192.168.4.1` (<a href="#fig01">Fig. 1</a>)
 3. Set the following mandatory fields:
   - Your Wi-Fi name: `SSID`
   - Your Wi-Fi password: `Password`
@@ -25,7 +25,21 @@
   - Your HA's user password: `Password`
   - Write again Wi-Fi name: `Device ID`, to confirm your settings
 4. Click the `Update` button
-5. If configuration was successfull on the web page will be displayed `Data saved successfully.`
+5. If configuration was successfull on the web page will be displayed `Data saved successfully.` (<a href="#fig02">Fig. 2</a>)
+
+<p align="center">
+  <a name="fig01"> 
+  <img src="doc/conf_web.png" /> </br>
+  <b>Fig. 1. Configuration web page. </b>
+  </a>
+</p>
+
+<p align="center">
+  <a name="fig02"> 
+  <img src="doc/conf_success.png" /> </br>
+  <b>Fig. 2. Configuration successfull. </b>
+  </a>
+</p>
 
 ## Usage
 1. Log into your HA service
