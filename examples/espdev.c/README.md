@@ -29,14 +29,14 @@
 
 <p align="center">
   <a name="fig01"> 
-  <img src="doc/conf_web.png" /> </br>
+  <img src="../../doc/conf_web.png" /> </br>
   <b>Fig. 1. Configuration web page. </b>
   </a>
 </p>
 
 <p align="center">
   <a name="fig02"> 
-  <img src="doc/conf_success.png" /> </br>
+  <img src="../../doc/conf_success.png" /> </br>
   <b>Fig. 2. Configuration successfull. </b>
   </a>
 </p>
@@ -44,6 +44,19 @@
 ## Usage
 1. Log into your HA service
 2. Select `Overview` panel
-3. New `switch` should be dicplayed with the name formatted as follows `ESP-XXXXXXXX`
-4. Toggle on the `switch`, it should turn on the connected device
+3. New `switch` should be dicplayed with the name formatted as follows `ESP-XXXXXXXX` (<a href="#fig02">Fig. 3</a>)
+4. Toggle on the `switch`, it should turn on the connected device (<a href="#fig02">Fig. 4</a>)
 
+<p align="center">
+  <a name="fig03"> 
+  <img src="../../doc/ha_switch_off.png" /> </br>
+  <b>Fig. 3. Switch is off. </b>
+  </a>
+</p>
+
+<p align="center">
+  <a name="fig04"> 
+  <img src="../../doc/ha_switch_on.png" /> </br>
+  <b>Fig. 4. Switch is on. </b>
+  </a>
+</p>
