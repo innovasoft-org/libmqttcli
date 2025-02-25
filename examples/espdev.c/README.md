@@ -19,8 +19,8 @@
 2. In the web browser enter the following web site `http://192.168.4.1`
 3. Set the following mandatory fields:
   - Your Wi-Fi name: `SSID`
-  - Your wi-Fi password: `Password`
-  - Your Home Assistant server name: `Host Name`; default value is `homeassistant.local:8123`
+  - Your Wi-Fi password: `Password`
+  - Your HA's server name: `Host Name`; default value is `homeassistant.local:8123`
   - Your HA's user name: `User Name`
   - Your HA's user password: `Password`
   - Write again Wi-Fi name: `Device ID`, to confirm your settings
@@ -28,3 +28,8 @@
 5. If configuration was successfull on the web page will be displayed `Data saved successfully.`
 
 ## Usage
+1. Log into your HA service
+2. Select `Overview` panel
+3. New `switch` should be dicplayed with the name formatted as follows `ESP-XXXXXXXX`
+4. Toggle on the `switch`, it should turn on the connected device
+
