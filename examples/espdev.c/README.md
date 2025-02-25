@@ -13,3 +13,18 @@
 3. Erase existing software using: `esptool.py -p /dev/ttyUSB0 -b 115200 erase_flash`
 4. Set defaults using: `sudo esptool.py -p /dev/ttyUSB0 -b 115200 write_flash 0xfb000 blank.bin 0xfc000 esp_init_data_default_v08.bin 0xfe000 blank.bin`
 5. Load the software using: `esptool.py -p /dev/ttyUSB0 -b 115200 write_flash 0x00000 eagle.flash.bin 0x10000 eagle.irom0text.bin`
+
+## Configuration
+1. Select the Wi-Fi on your phone/laptop which is formatted as follows `ESP-XXXXXXXX`
+2. In the web browser enter the following web site `http://192.168.4.1`
+3. Set the following mandatory fields:
+  - Your Wi-Fi name: `SSID`
+  - Your wi-Fi password: `Password`
+  - Your Home Assistant server name: `Host Name`; default value is `homeassistant.local:8123`
+  - Your HA's user name: `User Name`
+  - Your HA's user password: `Password`
+  - Write again Wi-Fi name: `Device ID`, to confirm your settings
+4. Click the `Update` button
+5. If configuration was successfull on the web page will be displayed `Data saved successfully.`
+
+## Usage
