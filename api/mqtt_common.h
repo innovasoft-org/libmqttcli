@@ -68,15 +68,13 @@ struct mqtt_common_ctx;
 #define MAX_WILL_PAYLOAD_LEN  1024
 /** Maximum number of topic filters in subscribe packet */
 #define MAX_TOPIC_FILTERS     8
-/** Maximum number of packet identifiers to use */
-//#define MAX_PKT_ID            ((uint8_t) 32)
-
-#ifndef LOGLN
-    #define LOGLN(level, msg)
-#endif
 
 /** Define architecture specific attributes */
 #define __ATTR
+
+#ifndef TOLOG
+    #define TOLOG(level, ...) log_write(level, __FILE__, __LINE__, __VA_ARGS__ )
+#endif
 
 /** Packet typed */
 #define PTYPE_NONE        ((uint8_t) 0x00)
@@ -417,10 +415,10 @@ typedef struct {
 } mqtt_publish_t;
 
 typedef struct {
+    /** Flags */
+  uint8_t flags;
   /** Packet Identifier */
   uint16_t id;
-  /** Flags */
-  uint8_t flags;
   /** Properties */
   lv_t properties;
   /** Reason Code */

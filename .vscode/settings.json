@@ -1,11 +1,14 @@
 {
   "cSpell.words": [
+    "ABRT",
     "ARRAYLEN",
     "AUTHMODE",
     "avty",
     "cafile",
+    "CLSD",
     "connack",
     "discon",
+    "disconcb",
     "ESPCONN",
     "esptcp",
     "espudp",
@@ -23,6 +26,7 @@
     "mosquitto",
     "mqttcli",
     "NOCLOSE",
+    "opmode",
     "pdata",
     "pesp",
     "PINGREQ",
@@ -46,7 +50,11 @@
   ],
   "files.associations": {
     "signal.h": "c",
-    "config.h": "c"
+    "config.h": "c",
+    "inet.h": "c",
+    "user_interface.h": "c",
+    "user_config.h": "c",
+    "user_log.h": "c"
   },
   "C_Cpp.errorSquiggles": "enabled"
 }

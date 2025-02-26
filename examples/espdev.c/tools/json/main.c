@@ -47,7 +47,7 @@ set_sys_conf(const char* value, const size_t len) {
   int offset = 0, value_offset, value_len, buf_len;
   json_string string;
 
-  TOLOG(LOG_DEBUG, "set_sys_conf()\r\n");
+  TOLOG(LOG_DEBUG, "set_sys_conf()");
 
   if(4 > len || NULL == value) {
     return FUN_E_ARGS;

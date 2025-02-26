@@ -16,9 +16,6 @@ const size_t big_buffer_len = sizeof(big_buffer) / sizeof(uint8_t);
 /** Button pressed counter */
 volatile int button_counter = 0;
 
-/** Stores the LED state 0 or 1 */
-volatile int led_state = 1;
-
 volatile int gpio_num = 12;
 
 /** Button pressed monitoring timer */
@@ -78,7 +75,7 @@ uint32 ICACHE_FLASH_ATTR user_rf_cal_sector_set(void) {
 static void ICACHE_FLASH_ATTR button_monitor_cb(void *arg) {
   extern struct user_cfg cfg;
 
-  TOLOG(LOG_DEBUG, "button_monitor_cb()\r\n");
+  TOLOG(LOG_DEBUG, "button_monitor_cb()");
 
   os_timer_disarm(&button_monitor_timer);
 
@@ -92,12 +89,12 @@ static void ICACHE_FLASH_ATTR button_monitor_cb(void *arg) {
   else {
     /* check the counter */
     if (button_counter >= 5 && button_counter < 10) {
-      TOLOG(LOG_INFO, "\r\nRestarting device...\r\n");
+      TOLOG(LOG_INFO, "Restarting device...");
       wifi_station_disconnect();
       system_restart();
     }
-    else if (button_counter >= 14 ) {
-      TOLOG(LOG_INFO, "\r\nRestoring factory settings...\r\n");
+    else if (button_counter >= 10 ) {
+      TOLOG(LOG_INFO, "Restoring factory settings...");
       cfg_set_defaults();
       cfg_save();
       system_restart();
@@ -118,7 +115,7 @@ static void  gpio_intr_cb(void *param) {
     /* if GPIO0 was pressed */
     if( 0 == GPIO_INPUT_GET( 0 ) ) {
       /* increment button counter */
-      TOLOG(LOG_DEBUG, "Button pressed...\r\n");
+      TOLOG(LOG_DEBUG, "Button pressed...");
       /* start button timer */
       os_timer_disarm(&button_monitor_timer);
       os_timer_setfn(&button_monitor_timer, (os_timer_func_t *)button_monitor_cb, NULL);
@@ -149,11 +146,6 @@ void ICACHE_FLASH_ATTR system_run_cb() {
 
   /* Switch on the led - device was run */
   GPIO_OUTPUT_SET(13, 0);
-
-  for(i=0; i<10; ++i) {
-    TOLOG(LOG_INFO, "\r\n");
-  }  
-  TOLOG(LOG_DEBUG, "system_run_cb()\r\n");
 
   /* Read system configuration */
   cfg_init();
@@ -208,7 +200,7 @@ void ICACHE_FLASH_ATTR system_run_cb() {
       net_init( STATION_MODE, ESPCONN_TCP | ESPCONN_UDP );
       break;
     default:
-      TOLOG(LOG_ALERT, "Unsupported mode\r\n");
+      TOLOG(LOG_ALERT, "");
       wifi_station_disconnect();
       system_restart();
       return;
@@ -227,7 +219,7 @@ void ICACHE_FLASH_ATTR user_init() {
 
   /* Calculate user data start sector */
   if (!system_partition_get_item(SYSTEM_PARTITION_CUSTOMER_PRIV_PARAM, &partition_item)) {
-    os_printf("Get partition information fail\r\n");
+    TOLOG(LOG_CRIT, "Get partition information fail");
   }
   priv_param_start_sec = partition_item.addr / SPI_FLASH_SEC_SIZE;
   

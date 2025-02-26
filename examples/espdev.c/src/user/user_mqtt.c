@@ -8,6 +8,7 @@
 #include "user_net.h"
 #include "user_log.h"
 #include "user_cfg.h"
+#include "user_util.h"
 
 /** Defines task handler with 0 id */
 #define MQTT_HANDLER_ID   0
@@ -31,16 +32,13 @@ const uint8_t GPIO13[] = "gpio13";
 const uint8_t GPIO14[] = "gpio14";
 const uint8_t GPIO15[] = "gpio15";
 
-/* Determines if the device was reconnected */
-uint8_t reconnected = 0;
+uint8_t mqtt_suback = 0;
+
+uint8_t mqtt_counter = 0;
 /** Determines if there is pending data to send */
 uint8_t pending_data = 0;
-/** IP of the remote device */
-uint32_t remote_ip = 0;
 /** Internal mqtt timer used to determine idle state */
 os_timer_t mqtt_idle_timer;
-/** Timer used to indicate error */
-os_timer_t mqtt_error_timer;
 /** Event queue */
 os_event_t *mqtt_event_queue = NULL;
 struct espconn *espconn;
@@ -50,23 +48,11 @@ clv_t data = { .capacity=sizeof(big_buffer)/sizeof(big_buffer[0]), .value=big_bu
 
 static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e);
 
-static void ICACHE_FLASH_ATTR mqtt_error_cb(void *arg) {
-  /* Disarm timers */
-  os_timer_disarm(&mqtt_idle_timer);
-  os_timer_disarm(&mqtt_error_timer);
-
-  /* Toggle LED */
-  GPIO_OUTPUT_SET(13, !GPIO_INPUT_GET(13));
-
-  /* Initialize error timer once again */
-  os_timer_setfn(&mqtt_error_timer, (os_timer_func_t *)mqtt_error_cb, NULL);
-  os_timer_arm(&mqtt_error_timer, DELAY_1_SEC, 0);
-}
-
 void ICACHE_FLASH_ATTR mqtt_restart_cb (void *arg) {
   /* Disarm timers */
   os_timer_disarm(&mqtt_idle_timer);
-  os_timer_disarm(&mqtt_error_timer);
+
+  TOLOG(LOG_DEBUG, "mqtt_restart_cb()");
 
   /* Restart the system */
   system_restart();
@@ -75,7 +61,8 @@ void ICACHE_FLASH_ATTR mqtt_restart_cb (void *arg) {
 void ICACHE_FLASH_ATTR mqtt_disconnect_cb(void *arg) {
   /* Disarm timers */
   os_timer_disarm(&mqtt_idle_timer);
-  os_timer_disarm(&mqtt_error_timer);
+
+  TOLOG(LOG_DEBUG, "mqtt_disconnect_cb()");
 
   /* Close connection */
   system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
@@ -84,37 +71,36 @@ void ICACHE_FLASH_ATTR mqtt_disconnect_cb(void *arg) {
 void ICACHE_FLASH_ATTR matt_reconnect_cb(void *arg, sint8 err)  {
   /* Disarm timers */
   os_timer_disarm(&mqtt_idle_timer);
-  os_timer_disarm(&mqtt_error_timer);
 
-  /* Set reconnected to allow UDP diagnostics */
-  reconnected = 1;
-
-  /* Initialize error timer */
-  os_timer_setfn(&mqtt_error_timer, (os_timer_func_t *)mqtt_error_cb, NULL);
-  os_timer_arm(&mqtt_error_timer, DELAY_1_SEC, 0);
+  if(espconn != NULL) {
+    /* Close connection */
+    system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
+  }
+  else {
+    net_connect( NULL );
+  }
 }
 
 static void ICACHE_FLASH_ATTR mqtt_idle_cb(void *arg) {
-  static uint8_t led_state = 0x00;
-
   /* Disarm idle timer */
   os_timer_disarm(&mqtt_idle_timer);
 
-  TOLOG(LOG_DEBUG, "idle_cb()\r\n");
-
-  data.length = 0;
+  TOLOG(LOG_DEBUG, "idle_cb()");
 
   /* Send the event */
   system_os_post(MQTT_HANDLER_ID, SIG_TIMEOUT, 0);
 
   /* Initialize idle timer once again */
   os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
-  os_timer_arm(&mqtt_idle_timer, DELAY_IDLE_ACTION, 0);
+  os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
 }
 
 
 void ICACHE_FLASH_ATTR mqtt_ready_cb(void *arg) {
-  TOLOG(LOG_DEBUG, "mqtt_ready_cb()\r\n");
+  TOLOG(LOG_DEBUG, "mqtt_ready_cb()");
+
+  /* Switch off the led (there is negative polarization) */
+  GPIO_OUTPUT_SET(13, 1);
 
   espconn = NULL;
   
@@ -137,7 +123,10 @@ void ICACHE_FLASH_ATTR mqtt_ready_cb(void *arg) {
   /* Start idle timer */
   os_timer_disarm(&mqtt_idle_timer);
   os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
-  os_timer_arm(&mqtt_idle_timer, DELAY_IDLE_ACTION, 0);
+  os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
+
+  /* Switch on the led (there is negative polarization) */
+  GPIO_OUTPUT_SET(13, 0);
 
   /** Return */
   return;
@@ -148,7 +137,7 @@ failure:
 }
 
 void ICACHE_FLASH_ATTR mqtt_udp_ready_cb(void *arg) {
-  TOLOG(LOG_DEBUG, "mqtt_udp_ready_cb()\r\n");
+  TOLOG(LOG_DEBUG, "mqtt_udp_ready_cb()");
 }
 
 void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) {
@@ -157,19 +146,19 @@ void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) 
   uint8_t tab[4] = { 0 };
   size_t i;
 
-  TOLOG(LOG_DEBUG, "mqtt_recv_cb()\r\n");
+  TOLOG(LOG_DEBUG, "mqtt_recv_cb()");
 
   /* Disarm timers */
   os_timer_disarm(&mqtt_idle_timer);
 
   /* If the packet length is incorrect */
   if( big_buffer_len < len || 0 == len) {
-    TOLOG(LOG_ERR,"recv data too big\r\n");
+    TOLOG(LOG_ERR,"recv data too big");
     return;
   }
 
   if(data.length > 0 ) {
-    TOLOG(LOG_ERR,"data in use\r\n");
+    TOLOG(LOG_ERR,"data in use");
     return;
   }
 
@@ -179,22 +168,23 @@ void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) 
 
   TOLOG(LOG_ERR, "Receiving length: ");
   os_memset(tab, 0x00, sizeof(tab)/sizeof(tab[0]));
-  os_sprintf(tab, "%d\r\n", data.length);
+  os_sprintf(tab, "%d", data.length);
   TOLOG(LOG_ERR, tab);
-  for(i=0; i<data.length; ++i) {
-    os_sprintf(tab, "%02x ", big_buffer[i]);
-    TOLOG(LOG_INFO, tab);
-  }
-  TOLOG(LOG_INFO, "\r\n");
+  //for(i=0; i<data.length; ++i) {
+  //  os_sprintf(tab, "%02x ", big_buffer[i]);
+  //  TOLOG(LOG_INFO, tab);
+  //}
+  //TOLOG(LOG_INFO, "\r\n");
 
   /* Send the event */
   system_os_post(MQTT_HANDLER_ID, SIG_RX, 0);
+
+  /* Start idle timer */
+  os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
+  os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
 }
 
 void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short len) {
-  if( !reconnected ) {
-    return;
-  }
   if(len != 2) {
     return;
   }
@@ -204,7 +194,7 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
   switch( pdata[0] ) {
     case 0xC0:
       pdata[0] = 0xD0;
-      net_udp_send(pdata, len, net_ip_cast(arg));
+      net_udp_sendto(pdata, len, net_ip_cast(arg), MULTICAST_PORT);
       break;
     case 0xF1:
       wifi_station_disconnect();
@@ -219,13 +209,14 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
 }
 
 void ICACHE_FLASH_ATTR mqtt_sent_cb(void *arg) {
-  TOLOG(LOG_DEBUG, "mqtt_sent_cb()\r\n");
+  TOLOG(LOG_DEBUG, "mqtt_sent_cb()");
+  data.length = 0;
   if( pending_data ) {
     pending_data = 0;
     system_os_post(MQTT_HANDLER_ID, SIG_TIMEOUT, 0);
     /* Start idle timer */
-    os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
-    os_timer_arm(&mqtt_idle_timer, DELAY_IDLE_ACTION, 0);
+    //os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
+    //os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
   }
 }
 
@@ -405,7 +396,7 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
   gpio_state = GPIO_INPUT_GET( gpio_num );
 
   /* Publishing current state */
-  ptr = data.value;
+  ptr = &data.value[0];
   publish_params.topic.value = ptr;
   if(cfg.ha_node_id_len) {publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id, cfg.ha_stat_t );
   }
@@ -414,9 +405,6 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
   }
   message = publish_params.message.value = ptr + publish_params.topic.length;
   publish_params.message.length = os_sprintf( message, "%s", ( gpio_state > 0 ) ? cfg.ha_stat_on : cfg.ha_stat_off );
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    return RC_IMPL_SPEC_ERR;
-  }
   if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
     return RC_IMPL_SPEC_ERR;
   }
@@ -465,44 +453,49 @@ void cb_suback(const mqtt_cli_ctx_cb_t *self, const mqtt_suback_t *pkt, const mq
     return;
   }
 
-  // Let HA to process configuration packet
-  os_delay_us( 1e6 );
+  /* Let HA to process configuration packet */
+  os_delay_us( 2e6 );
+
+  /* Switch off the led (there is negative polarization) */
+  GPIO_OUTPUT_SET(13, 1);
 }
 
 static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
   extern struct user_cfg cfg;
-  extern volatile int led_state;
   static mqtt_cli_t cli;
   static bool mqtt_initialized = false;
-  uint16_t rc;
+  uint16_t rc = MQTT_SUCCESS;
   mqtt_params_t mqtt_params = { .bufsize=big_buffer_len, .max_pkt_id=8, .timeout=1, .version=4 };
   mqtt_will_params_t will_params = (mqtt_will_params_t) { };
   lv_t cli_userid, cli_username, cli_password;
-  uint8_t *ptr = NULL, *ptr0 = NULL, connected;
+  uint8_t *ptr = NULL, *ptr0 = NULL, connected, *message;
   uint8_t tab[9] = { 0 };
   size_t length, i;
   sint8 err;
+  mqtt_publish_params_t publish_params = { };
+  int gpio_state;
+  extern volatile int gpio_num;
 
-  TOLOG(LOG_DEBUG, "mqtt_handler()\r\n");
+  TOLOG(LOG_DEBUG, "mqtt_handler()");
+
+  /* Disarm idle timer */
+  os_timer_disarm(&mqtt_idle_timer);
 
   switch(e->sig) {
     case SIG_CLOSE:
+      TOLOG(LOG_CRIT,"SIG_CLOSE");
+      espconn = NULL;
       net_tcp_disconnect();
       mqtt_initialized = false;
       mqtt_cli_destr( &cli );
-      if( FUN_OK != net_tcp_connect() ) {
+      if( FUN_OK != net_connect( NULL ) ) {
         goto restart;
       }
       break;
     case SIG_INIT:
-      mqtt_initialized = false;
-      /* Toggle led state */
-      led_state = (1 == led_state) ? 0 : 1;
-      /* Switch on/off the led (there is negative polarization) */
-      GPIO_OUTPUT_SET(13, led_state);
-      
+      mqtt_initialized = false;      
       if( MQTT_SUCCESS != (rc = mqtt_cli_init_ex( &cli, &mqtt_params )) ) {
-        TOLOG(LOG_CRIT,"MQTT initialization failed\r\n");
+        TOLOG(LOG_CRIT,"");
         goto restart;
       }
       cli.set_cb_connack( &cli, cb_connack );
@@ -521,7 +514,7 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       ptr = (uint8_t*) os_memcpy( ptr, cfg.ha_pl_not_avail, cfg.ha_pl_not_avail_len ) + cfg.ha_pl_not_avail_len;
       will_params.payload.length = ptr - ptr0;;
       if( MQTT_SUCCESS != (rc = cli.set_br_will( &cli, &will_params) ) ) {
-        TOLOG(LOG_ERR,"cli.set_br_will( ... )");
+        TOLOG(LOG_ERR,"");
         goto restart;
       }
       /** Set UserID */
@@ -534,7 +527,7 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
         cli_userid.value = cfg.dev_id;
       }
       if( MQTT_SUCCESS != (rc = cli.set_br_userid( &cli, &cli_userid )) ) {
-        TOLOG(LOG_ERR,"cli.set_br_userid( ... )");
+        TOLOG(LOG_ERR,"");
         goto restart;
       }
       /** Set User Name */
@@ -542,7 +535,7 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
         cli_username.length = cfg.br_username_len;
         cli_username.value = cfg.br_username;
         if( MQTT_SUCCESS != (rc = cli.set_br_username( &cli, &cli_username )) ) {
-          TOLOG(LOG_ERR,"cli.set_br_username( ... )");
+          TOLOG(LOG_ERR,"");
           goto restart;   
         }
       }
@@ -551,75 +544,64 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
         cli_password.length = cfg.br_pass_len;
         cli_password.value = cfg.br_pass;
         if( MQTT_SUCCESS != (rc = cli.set_br_password( &cli, &cli_password )) ) {
-          TOLOG(LOG_ERR,"cli.set_br_password( ... )");
+          TOLOG(LOG_ERR,"");
           goto restart;   
         }
       }
       mqtt_initialized = true;
       break;
     case SIG_TIMEOUT:
+      data.length = 0;
     case SIG_RX:
       if(false == mqtt_initialized) {
-        TOLOG(LOG_ERR, "Uninitialized");
+        TOLOG(LOG_ERR, "");
         goto restart;        
       }
-      if( SIG_TIMEOUT == e->sig ) {
-        cli.is_connected(&cli, &connected);
-        /* If MQTT client is not connected */
-        if( !connected ) {
-          /* Toggle led state */
-          led_state = (1 == led_state) ? 0 : 1;
-          /* Switch on/off the led (there is negative polarization) */
-          GPIO_OUTPUT_SET(13, led_state);
-        }
-      }
-
       /* Processing and sending */
       rc = cli.process( &cli, &data, NULL);
       if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
         if(rc == MQTT_CONN_REJECTED) {
           TOLOG(LOG_ERR, "Connection rejected");
-          /* Reconnect */
-          matt_reconnect_cb( NULL, 0);
+          system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0); 
         }
         else if(rc == MQTT_NOT_CONNECTED) {
           TOLOG(LOG_ERR, "Not connected");
-          /* Close connection */
           system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);          
         }
         else {
-          TOLOG(LOG_ERR, "process( ... )");
+          TOLOG(LOG_ERR, "");
         }
         break;
       }
-      if ( rc == MQTT_PENDING_DATA ) {
-        /* Disarm idle timer */
-        os_timer_disarm(&mqtt_idle_timer);
-        /* new data could only be send if current data was sent successfully */
-        pending_data = 1;
-      }
+
       length = data.length;
+
       if( length && espconn ) {
         TOLOG(LOG_ERR, "Sending length: ");
         os_memset(tab, 0x00, sizeof(tab)/sizeof(tab[0]));
-        os_sprintf(tab, "%;d\r\n", length);
+        os_sprintf(tab, "%d", length);
         TOLOG(LOG_ERR, tab);
-        for(i=0; i<length; ++i) {
-          os_sprintf(tab, "%02x ", big_buffer[i]);
-          TOLOG(LOG_INFO, tab);
-        }
-        TOLOG(LOG_INFO, "\r\n");
+        //for(i=0; i<length; ++i) {
+        //  os_sprintf(tab, "%02x ", big_buffer[i]);
+        //  TOLOG(LOG_INFO, tab);
+        //}
+        //TOLOG(LOG_INFO, "\r\n");
         if( 0 != (err=espconn_send( espconn, (uint8*) big_buffer, length)) ) {
-          TOLOG(LOG_ERR, "espconn_send() error = ");
-          os_memset(tab, 0x00, sizeof(tab)/sizeof(tab[0]));
-          os_sprintf(tab, "%d\r\n", err);
-          TOLOG(LOG_INFO, tab);
+          TOLOG(LOG_ERR, "");
         }
-        data.length = 0;
       }
       break;
     default:
       break;
+  }
+
+  if ( rc == MQTT_PENDING_DATA ) {
+    /* new data could only be send if current data was sent successfully */
+    pending_data = 1;
+  }
+  else {
+    os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
+    os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
   }
 
   return;
