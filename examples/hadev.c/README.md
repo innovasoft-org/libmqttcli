@@ -26,7 +26,7 @@
 # Examples
 1. Client establishes connection to the `homeassistant.local` and starts working as typical switch device.
 ```
-hadev -h homeassistant.local -p 8123 -I UID12345678 -N testuser12345678 -P homeassistantpassword -v
+hadev -h homeassistant.local -p 1883 -I UID12345678 -N testuser12345678 -P homeassistantpassword -v
 ```
 # Screenshots
 Typical use cases of the program were presented on: <a href="#fig01">Fig. 1</a>, <a href="#fig02">Fig. 2</a>, <a href="#fig03">Fig. 3</a> and <a href="#fig04">Fig. 4</a>.
