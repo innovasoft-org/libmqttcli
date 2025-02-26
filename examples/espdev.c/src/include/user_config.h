@@ -30,9 +30,6 @@
 #define DELAY_FORCE_RESTART     300000
 
 /** Time to perform idle action */
-#define DELAY_IDLE_ACTION       1000
-
-/** Time to perform idle action */
 #define DELAY_1_SEC             1000
 
 /** Delay 5 seconds */
@@ -51,8 +48,6 @@
 #define FUN_E_MEM_PERM          (uint16_t) (0x8102)
 #define FUN_E_RFU               (uint16_t) (0xFFFF)
 
-#define ARRAYLEN(ARRAY) ( sizeof(ARRAY) / sizeof(ARRAY[0]) )
-
 /** Available device modes */
 enum device_modes {
   /** Undefined working mode */
@@ -69,6 +64,14 @@ enum device_modes {
 #define MULTICAST_IP1           0
 #define MULTICAST_IP2           0
 #define MULTICAST_IP3           1
+
+/** Little Endian identifier */
+#define LITTLE_ENDIAN 1
+/** Big Endian identifier */
+#define BIG_ENDIAN    2
+
+/** Tensilica Xtensa L106 microprocessor is little endian */
+#define BYTE_ORDER LITTLE_ENDIAN
 
 #if ((SPI_FLASH_SIZE_MAP == 0) || (SPI_FLASH_SIZE_MAP == 1))
 #error "The flash map is not supported"

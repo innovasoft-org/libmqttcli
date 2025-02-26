@@ -1,8 +1,6 @@
 #ifndef __USER_CFG_H__
 #define __USER_CFG_H__
 
-
-
 /** Program configuration structure */
 struct user_cfg {
   /** Device mode */
@@ -23,6 +21,8 @@ struct user_cfg {
   uint8_t dev_hw[16];             /* 16 */
   /* Device hardware version length */
   uint8_t dev_hw_len;             /*  1 */
+  /** Time to Reconnect */
+  uint32_t dev_ttr;               /*  4 */
   /** Wi-Fi ssid */
   uint8_t wifi_ssid[64];          /* 64 */
   /** Wi-Fi ssid length */
@@ -98,10 +98,10 @@ struct user_cfg {
   /** HA's state off length */
   uint8_t ha_stat_off_len;        /*  1 */
   /** Used to make total structure size dividable by 4 */
-  uint8_t rfu[13];                /* 13 */
+  uint8_t rfu[11];                /*  9 */
 };
 
-uint16_t cfg_init();
+uint16_t cfg_init( void );
 
 void cfg_set_defaults( void );
 

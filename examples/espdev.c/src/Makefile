@@ -69,11 +69,11 @@ LINKFLAGS_eagle.app.v6 = \
 	-lnet80211	\
 	-llwip	\
 	-lwpa	\
-	-lcrypto	\
+	-lcrypto \
 	-lmain	\
 	-lupgrade \
 	-lmqttcli \
-	$(DEP_LIBS_eagle.app.v6)					\
+	$(DEP_LIBS_eagle.app.v6) \
 	-Wl,--end-group
 
 # REMOVED: -ljson -lssl -lpwm -lsmartconfig

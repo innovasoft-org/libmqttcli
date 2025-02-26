@@ -6,8 +6,7 @@
 #include "user_log.h"
 #include "user_net.h"
 #include "user_cfg.h"
-
-#define ISDIGIT(V) ( V==0x30 || V==0x31 || V==0x32 || V==0x33 || V==0x34 || V==0x35 || V==0x36 || V==0x37 || V==0x38 || V==0x39 )
+#include "user_util.h"
 
 const uint8_t SERVER_NAME[] = "ESP-HTTPDv1";
 const uint8_t HTTP_VERSION[] = "HTTP/1.1";
@@ -104,6 +103,14 @@ window.addEventListener(\"DOMContentLoaded\", (event) => {\
 <div id=\"content\">\
 <form action=\"http://192.168.4.1\" method=\"POST\" id=\"update-form\">\
 <fieldset>\
+  <div class=\"legend\"> System settings </div>\
+  <table>\
+    <tr>\
+      <td class=\"col1\" align=\"right\"><label for=\"dev_ttr\">* Time To Reconnect:</label></td>\
+      <td align=\"left\"><input type=\"number\" name=\"dev_ttr\" id=\"dev_ttr\" required value=\"5000\" min=\"0\" max=\"600000\" step=\"500\"></td>\
+      <td class=\"err\" id=\"dev_ttr_e\"></td>\
+    </tr>\
+  </table>\
   <div class=\"legend\"> Wi-Fi settings </div>\
   <table>\
     <tr>\
@@ -121,12 +128,12 @@ window.addEventListener(\"DOMContentLoaded\", (event) => {\
   <table>\
     <tr>\
       <td class=\"col1\" align=\"right\"><label for=\"br_host\">* Host Name:</label></td>\
-      <td align=\"left\"><input type=\"text\" name=\"br_host\" id=\"br_host\" required minlength=\"4\" maxlength=\"64\"></td>\
+      <td align=\"left\"><input type=\"text\" name=\"br_host\" id=\"br_host\" required value=\"homeassistant.local\" minlength=\"4\" maxlength=\"64\"></td>\
       <td class=\"err\" id=\"br_host_e\"></td>\
     </tr>\
     <tr>\
       <td align=\"right\"><label for=\"br_port\">* Port:</label></td>\
-      <td align=\"left\"><input type=\"number\" name=\"br_port\" id=\"br_port\" required min=\"0\" max=\"65535\"></td>\
+      <td align=\"left\"><input type=\"number\" name=\"br_port\" id=\"br_port\" required value=\"1883\" min=\"0\" max=\"65535\"></td>\
       <td class=\"err\" id=\"br_port_e\"></td>\
     </tr>\
     <tr>\
@@ -135,13 +142,13 @@ window.addEventListener(\"DOMContentLoaded\", (event) => {\
       <td class=\"err\" id=\"br_userid_e\"></td>\
     </tr>\
     <tr>\
-      <td align=\"right\"><label for=\"br_username\">User Name:</label></td>\
-      <td align=\"left\"><input type=\"text\" name=\"br_username\" id=\"br_username\" minlength=\"0\" maxlength=\"64\"></td>\
+      <td align=\"right\"><label for=\"br_username\">* User Name:</label></td>\
+      <td align=\"left\"><input type=\"text\" name=\"br_username\" id=\"br_username\" required minlength=\"0\" maxlength=\"64\"></td>\
       <td class=\"err\" id=\"br_username_e\"></td>\
     </tr>\
     <tr>\
-      <td align=\"right\"><label for=\"br_pass\">Password:</label></td>\
-      <td align=\"left\"><input type=\"text\" name=\"br_pass\" id=\"br_pass\" minlength=\"0\" maxlength=\"64\"></td>\
+      <td align=\"right\"><label for=\"br_pass\">* Password:</label></td>\
+      <td align=\"left\"><input type=\"text\" name=\"br_pass\" id=\"br_pass\" required minlength=\"0\" maxlength=\"64\"></td>\
       <td class=\"err\" id=\"br_pass_e\"></td>\
     </tr>\
   </table>\
@@ -221,6 +228,7 @@ window.addEventListener(\"DOMContentLoaded\", (event) => {\
 </html>";
 
 const uint8_t EMPTY[]             = "";
+const uint8_t DEV_TTR[]           = "dev_ttr";
 const uint8_t WIFI_SSID[]         = "wifi_ssid";
 const uint8_t WIFI_PASS[]         = "wifi_pass";
 const uint8_t BR_HOST[]           = "br_host";
@@ -246,7 +254,8 @@ const uint8_t E_MEMORY[]          = "Memory failure";
 
 /** Accepted json string */
 typedef enum { 
-  ID_EMPTY = 0, 
+  ID_EMPTY = 0,
+  ID_DEV_TTR,
   ID_WIFI_SSID, 
   ID_WIFI_PASS,
   ID_BR_HOST,
@@ -273,6 +282,7 @@ typedef enum {
 
 const uint8_t *STRINGS[] = {
   EMPTY,
+  DEV_TTR,
   WIFI_SSID,
   WIFI_PASS,
   BR_HOST,
@@ -313,7 +323,7 @@ static uint16_t ICACHE_FLASH_ATTR parse_config_json(const char* buf, const size_
   size_t offset = 0, value_offset, value_len, length;
   string_ids string;
 
-  TOLOG(LOG_DEBUG, "\r\nparse_config_json()\r\n");
+  TOLOG(LOG_DEBUG, "parse_config_json()");
 
   if(4 > buf_len || NULL == buf) {
     return FUN_E_ARGS;
@@ -344,81 +354,85 @@ json_param:
 
   /* json: string */
   string = ID_EMPTY;
-  if( !os_memcmp( &buf[offset], WIFI_SSID, ARRAYLEN(WIFI_SSID)-1 ) ) {
+  if( !os_memcmp( &buf[offset], DEV_TTR, ARRAYLEN(DEV_TTR)-1 ) ) {
+    string = ID_DEV_TTR;
+    offset += ARRAYLEN(DEV_TTR) - 1;
+  }
+  else if( !os_memcmp( &buf[offset], WIFI_SSID, ARRAYLEN(WIFI_SSID)-1 ) ) {
     string = ID_WIFI_SSID;
-    offset += sizeof(WIFI_SSID) - 1;
+    offset += ARRAYLEN(WIFI_SSID) - 1;
   }
   else if( !os_memcmp( &buf[offset], WIFI_PASS, ARRAYLEN(WIFI_PASS)-1 ) ) {
     string = ID_WIFI_PASS;
-    offset += sizeof(WIFI_PASS) - 1;
+    offset += ARRAYLEN(WIFI_PASS) - 1;
   }
   else if( !os_memcmp( &buf[offset], BR_HOST, ARRAYLEN(BR_HOST)-1 ) ) {
     string = ID_BR_HOST;
-    offset += sizeof(BR_HOST) - 1;
+    offset += ARRAYLEN(BR_HOST) - 1;
   }
   else if( !os_memcmp( &buf[offset], BR_PORT, ARRAYLEN(BR_PORT)-1 ) ) {
     string = ID_BR_PORT;
-    offset += sizeof(BR_PORT) - 1;
+    offset += ARRAYLEN(BR_PORT) - 1;
   }
   else if( !os_memcmp( &buf[offset], BR_USERID, ARRAYLEN(BR_USERID)-1 ) ) {
     string = ID_BR_USERID;
-    offset += sizeof(BR_USERID) - 1;
+    offset += ARRAYLEN(BR_USERID) - 1;
   }
   else if( !os_memcmp( &buf[offset], BR_USERNAME, ARRAYLEN(BR_USERNAME)-1 ) ) {
     string = ID_BR_USERNAME;
-    offset += sizeof(BR_USERNAME) - 1;
+    offset += ARRAYLEN(BR_USERNAME) - 1;
   }
   else if( !os_memcmp( &buf[offset], BR_PASS, ARRAYLEN(BR_PASS)-1 ) ) {
     string = ID_BR_PASS;
-    offset += sizeof(BR_PASS) - 1;
+    offset += ARRAYLEN(BR_PASS) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_BASE_T, ARRAYLEN(HA_BASE_T)-1 ) ) {
     string = ID_HA_BASE_T;
-    offset += sizeof(HA_BASE_T) - 1;
+    offset += ARRAYLEN(HA_BASE_T) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_NODE_ID, ARRAYLEN(HA_NODE_ID)-1 ) ) {
     string = ID_HA_NODE_ID;
-    offset += sizeof(HA_NODE_ID) - 1;
+    offset += ARRAYLEN(HA_NODE_ID) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_CMD_T, ARRAYLEN(HA_CMD_T)-1 ) ) {
     string = ID_HA_CMD_T;
-    offset += sizeof(HA_CMD_T) - 1;
+    offset += ARRAYLEN(HA_CMD_T) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_STAT_T, ARRAYLEN(HA_STAT_T)-1 ) ) {
     string = ID_HA_STAT_T;
-    offset += sizeof(HA_STAT_T) - 1;
+    offset += ARRAYLEN(HA_STAT_T) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_AVTY_T, ARRAYLEN(HA_AVTY_T)-1 ) ) {
     string = ID_HA_AVTY_T;
-    offset += sizeof(HA_AVTY_T) - 1;
+    offset += ARRAYLEN(HA_AVTY_T) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_PL_ON, ARRAYLEN(HA_PL_ON)-1 ) ) {
     string = ID_HA_PL_ON;
-    offset += sizeof(HA_PL_ON) - 1;
+    offset += ARRAYLEN(HA_PL_ON) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_PL_OFF, ARRAYLEN(HA_PL_OFF)-1 ) ) {
     string = ID_HA_PL_OFF;
-    offset += sizeof(HA_PL_OFF) - 1;
+    offset += ARRAYLEN(HA_PL_OFF) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_PL_AVAIL, ARRAYLEN(HA_PL_AVAIL)-1 ) ) {
     string = ID_HA_PL_AVAIL;
-    offset += sizeof(HA_PL_AVAIL) - 1;
+    offset += ARRAYLEN(HA_PL_AVAIL) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_PL_NOT_AVAIL, ARRAYLEN(HA_PL_NOT_AVAIL)-1 ) ) {
     string = ID_HA_PL_NOT_AVAIL;
-    offset += sizeof(HA_PL_NOT_AVAIL) - 1;
+    offset += ARRAYLEN(HA_PL_NOT_AVAIL) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_STAT_ON, ARRAYLEN(HA_STAT_ON)-1 ) ) {
     string = ID_HA_STAT_ON;
-    offset += sizeof(HA_STAT_ON) - 1;
+    offset += ARRAYLEN(HA_STAT_ON) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_STAT_OFF, ARRAYLEN(HA_STAT_OFF)-1 ) ) {
     string = ID_HA_STAT_OFF;
-    offset += sizeof(HA_STAT_OFF) - 1;
+    offset += ARRAYLEN(HA_STAT_OFF) - 1;
   }
   else if( !os_memcmp( &buf[offset], DEV_ID, ARRAYLEN(DEV_ID)-1 ) ) {
     string = ID_DEV_ID;
-    offset += sizeof(DEV_ID) - 1;
+    offset += ARRAYLEN(DEV_ID) - 1;
   }
   else {
     return FUN_E_ARGS;
@@ -473,6 +487,16 @@ json_param:
   }
 
   switch(string) {
+    case ID_DEV_TTR:
+      if(value_len > sizeof(cfg.br_port)) {
+        error_list[ID_DEV_TTR] = ID_E_LENGTH_INVALID;
+        break;
+      }
+      cfg.dev_ttr = 0;
+      while( ISDIGIT( buf[value_offset] ) && buf_len > value_offset ) {
+        cfg.dev_ttr = cfg.dev_ttr * 10 + (uint32_t) ( buf[value_offset++] - 0x30 );
+      }
+      break;
     case ID_WIFI_SSID:
       if(value_len > ARRAYLEN(cfg.wifi_ssid)) {
         error_list[ID_WIFI_SSID] = ID_E_LENGTH_INVALID;
@@ -658,7 +682,7 @@ void ICACHE_FLASH_ATTR server_sent_cb(void *arg) {
   size_t div = (size_t) (send_buffer_len / big_buffer_len);
   uint8_t *ptr = NULL;
 
-  TOLOG(LOG_DEBUG, "server_sent_cb()\r\n");
+  TOLOG(LOG_DEBUG, "server_sent_cb()");
 
   if( div >= 1 ) {
     ptr = (uint8_t*) &big_buffer[0];
@@ -710,9 +734,9 @@ void ICACHE_FLASH_ATTR server_sent_cb(void *arg) {
 
   if(send_len && ptr) {
     if( espconn_send( (struct espconn*) arg, (uint8*) big_buffer, send_len)) {
-      TOLOG(LOG_ERR, "espconn_send() failed\r\n");
+      TOLOG(LOG_ERR, "");
     }
-    TOLOG(LOG_DEBUG, "Send successfully\r\n");
+    TOLOG(LOG_DEBUG, "Send successfully");
   }
 }
 
@@ -728,7 +752,7 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
 
   send_buffer_len = send_buffer_offset = 0;
 
-  TOLOG(LOG_DEBUG, "Received:\r\n");
+  TOLOG(LOG_DEBUG, "Received:");
   TOLOG(LOG_DEBUG, pdata);
 
   if( 0 == os_memcmp( pdata, "GET", 3 )) {
@@ -884,14 +908,16 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
 finish:
   if( 0x01 == save_cfg ) {
     save_cfg = 0x00;
+    /* Change to operational mode */
     cfg.dev_mode = MODE_OPE;
+    /* Save data */
     if( FUN_OK != cfg_save()) {
-      TOLOG(LOG_DEBUG, "\r\nConfig saved failed\r\n");
+      TOLOG(LOG_DEBUG, "");
       ptr = &big_buffer[0];
       len = os_sprintf(ptr, "{\"errors\":[ {\"field\":\"\", \"message\":\"%s\"} ]}", STRINGS[ ID_E_MEMORY ]);
     }
     else {
-      TOLOG(LOG_DEBUG, "\r\nConfig saved\r\n");
+      TOLOG(LOG_DEBUG, "Config saved");
       /* Initialize restart timer once again */
       os_timer_setfn(&server_restart_timer, (os_timer_func_t *)server_restart_cb, NULL);
       os_timer_arm(&server_restart_timer, DELAY_5_SEC, 0);
@@ -899,7 +925,7 @@ finish:
   }
   if(len && ptr) {
     if( espconn_send( (struct espconn*) arg, (uint8*) big_buffer, len)) {
-      TOLOG(LOG_ERR, "espconn_send() failed\r\n");
+      TOLOG(LOG_ERR, "");
     }
     ptr[len] = 0;
     TOLOG(LOG_DEBUG, big_buffer);

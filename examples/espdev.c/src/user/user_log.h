@@ -14,9 +14,9 @@
 #define LOG_INFO    (uint8) (6)
 #define LOG_DEBUG   (uint8) (7)
 
-#define TOLOG( LEVEL, MSG ) log_write( LEVEL, MSG );
+#define TOLOG( level, msg) log_write(level, __FILE__, __LINE__, msg )
 
 void log_init(uint8_t _max_level);
-void log_write(uint8_t level, const char* msg);
+void log_write(int level, char* filename, int line, char *message);
 
 #endif //__USER_LOG_H___
