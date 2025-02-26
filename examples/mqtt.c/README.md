@@ -59,3 +59,13 @@ mqtt --sub -h test.mosquitto.org -p 8884 -t '#' -v --mqtt-version 5 --cafile ./m
 ```
 mqtt --sub -h test.mosquitto.org -p 8885 --username rw --password readwrite -t '#' -v --mqtt-version 5 --cafile ./mosquitto.org.crt
 ```
+
+# Screenshots
+Typical flow from the console was presented on <a href="#fig01">Fig. 1</a>.
+
+<p align="center">
+  <a name="fig01"> 
+  <img src="../../doc/mqtt_console.png" /> </br>
+  <b>Fig. 1. mqtt program - console view. </b>
+  </a>
+</p>
