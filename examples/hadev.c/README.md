@@ -28,3 +28,33 @@
 ```
 hadev -h homeassistant.local -p 8123 -I UID12345678 -N testuser12345678 -P homeassistantpassword -v
 ```
+# Screenshots
+Typical use cases of the program were presented on: <a href="#fig01">Fig. 1</a>, <a href="#fig02">Fig. 2</a>, <a href="#fig03">Fig. 3</a> and <a href="#fig04">Fig. 4</a>.
+
+<p align="center">
+  <a name="fig01"> 
+  <img src="../../doc/hadev_console.png" /> </br>
+  <b>Fig. 1. hadev program - console view. </b>
+  </a>
+</p>
+
+<p align="center">
+  <a name="fig02"> 
+  <img src="../../doc/acme_dev_disconnected.png" /> </br>
+  <b>Fig. 2. acme device disconnected - Home Assistant view. </b>
+  </a>
+</p>
+
+<p align="center">
+  <a name="fig03"> 
+  <img src="../../doc/acme_dev_off.png" /> </br>
+  <b>Fig. 3. acme device off - Home Assistant view. </b>
+  </a>
+</p>
+
+<p align="center">
+  <a name="fig04"> 
+  <img src="../../doc/acme_dev_on.png" /> </br>
+  <b>Fig. 4. acme device on - Home Assistant view. </b>
+  </a>
+</p>
