@@ -21,10 +21,10 @@ The aim of this repo is to demonstrate possibilities as well as usage of the `li
 ## Usage
 ### Requirements
 The library is not exchanging packets via internet as well as it is not conscious of elapsed time, therefore the user shall support the library with these functionalities. To achieve this the following elements shall be designed in the program flow:
-- The timer should be configured to generate an interrupt after a specified period of time, hereinafter referred to as `timeout`. If the `timeout` was detected then empty packet shall be presented to the `process` function as it was presented on <a href="#fig01">Fig. 1</a>.
+- The timer should be configured to generate an interrupt after a specified period of time, hereinafter referred to as `timeout`. If the `timeout` was detected then empty packet shall be presented to the `process` function as it was shown on <a href="#fig01">Fig. 1</a>.
 - If any data was received it shall be presented to the `process` function (<a href="#fig01">Fig. 1</a>).
 - If shall be checked if `process` function has prepared any data to send. If any data was prepared then it must be send to the broker. The `process` function shall be repeated until it returns the `MQTT_SUCCESS` reason code, hereinafter referred to as `rc`.
-- If the `process` function has returned other `rc` than `MQTT_PENDING_DATA`, then an appropriate actions shall be take into account.
+- If the `process` function has returned other `rc` than `MQTT_PENDING_DATA`, then an appropriate actions shall be taken into account.
 
 <p align="center">
   <a name="fig01"> 
@@ -86,7 +86,7 @@ do {
 } while( rc == MQTT_PENDING_DATA );
 ```
 > [!NOTE]
-> If `channel` parameters is set to `NULL`, then in the following `process` functions it also shall be set to `NULL`
+> If during configuration stage broker\`s `IP` was not specified, then in the following `process` functions `channel` parameter shall be set to `NULL`
 ### Preparing *PUBLISH* package
 ```C
 const char *topic = "sensor01";
