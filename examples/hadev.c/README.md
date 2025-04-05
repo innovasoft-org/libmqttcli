@@ -45,20 +45,20 @@ Typical use cases of the program were presented on: <a href="#fig01">Fig. 1</a>,
 <p align="center">
   <a name="fig02"> 
   <img src="../../doc/acme_dev_disconnected.png" /> </br>
-  <b>Fig. 2. acme device disconnected - Home Assistant view. </b>
+  <b>Fig. 2. ACME devices disconnected - Home Assistant view. </b>
   </a>
 </p>
 
 <p align="center">
   <a name="fig03"> 
   <img src="../../doc/acme_dev_off.png" /> </br>
-  <b>Fig. 3. acme device off - Home Assistant view. </b>
+  <b>Fig. 3. ACME devices off - Home Assistant view. </b>
   </a>
 </p>
 
 <p align="center">
   <a name="fig04"> 
   <img src="../../doc/acme_dev_on.png" /> </br>
-  <b>Fig. 4. acme device on - Home Assistant view. </b>
+  <b>Fig. 4. ACME devices on - Home Assistant view. </b>
   </a>
 </p>
