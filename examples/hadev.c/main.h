@@ -41,15 +41,23 @@
 /** Short option: user name */
 #define S_OPT_USERNAME      'N'
 /** Long option: user name */
-#define L_OPT_USERNAME        "username"
+#define L_OPT_USERNAME      "username"
 /** Short option: password */
 #define S_OPT_PASSWORD      'P'
 /** Long option: password */
 #define L_OPT_PASSWORD      "password"
 /** Short option: verbose */
-#define S_OPT_VERBOSE      'v'
+#define S_OPT_VERBOSE       'v'
 /** Long option: verbose */
-#define L_OPT_VERBOSE      "verbose"
+#define L_OPT_VERBOSE       "verbose"
+/** Short option: mqtt-version */
+#define S_OPT_MQTT_VERSION  ((int) 3)
+/** Long option: mqtt-version */
+#define L_OPT_MQTT_VERSION  "mqtt-version"
+/** Short option: unique-id */
+#define S_OPT_UNIQUE_ID     ((int) 9)
+/** Long option: unique-id */
+#define L_OPT_UNIQUE_ID     "unique-id"
 
 #define LOG_EMERG 0
 #define LOG_ALERT 1
@@ -59,12 +67,6 @@
 #define LOG_NOTICE 5
 #define LOG_INFO 6
 #define LOG_DEBUG 7
-
-//typedef enum device_state {
-//  S_STOPPED = 0,
-//  S_INITIALIZED = 1,
-//  S_CONNECTED
-//} device_state_t;
 
 /** @brief Program context definition */
 typedef struct program_ctx {
@@ -94,6 +96,10 @@ typedef struct program_ctx {
   uint8_t state;
   /** Stores timer interrupt status */
   uint8_t timer_int;
+  /** Stores MQTT protocol's version */
+  uint8_t mqtt_version;
+  /** Stores unique-id of the device */
+  char uniqueid[256];
 } context_t;
 
 #define IS_MULTICAST(IPADDR) ( (IPADDR & 0x000000E0) == 0x000000E0 )

@@ -35,6 +35,7 @@ static struct option long_options[] = {
   {L_OPT_CAFILE,      required_argument,  0,  S_OPT_CAFILE},
   {L_OPT_CAPATH,      required_argument,  0,  S_OPT_CAPATH},
   {L_OPT_CERT,        required_argument,  0,  S_OPT_CERT},
+  {L_OPT_FLAGS,       required_argument,  0,  S_OPT_FLAGS},
   {L_OPT_HOST,        required_argument,  0,  S_OPT_HOST},
   {L_OPT_KEY,         required_argument,  0,  S_OPT_KEY},
   {L_OPT_MESSAGE,     required_argument,  0,  S_OPT_MESSAGE},
@@ -76,6 +77,7 @@ int validate_args(int argc, char **argv) {
   ctx.timeout = 1;
   ctx.mqtt_version = 5;
   ctx.tls = 0;
+  ctx.flags = 0x00;
 
   if(NULL == strstr(argv[0], PROGRAM_NAME)) {
     TOLOG(LOG_ERR,"Program name was changed to %s",argv[0]);
@@ -109,6 +111,9 @@ int validate_args(int argc, char **argv) {
         ctx.cert = (char*) malloc( length * sizeof(char) );
         memcpy( ctx.cert, optarg, length );
         ctx.tls = 1;
+        break;
+      case S_OPT_FLAGS:
+        ctx.flags = atoi( optarg );
         break;
       case S_OPT_HOST:
         length = strlen( optarg );
@@ -216,6 +221,11 @@ int validate_args(int argc, char **argv) {
     return RESULT_FAILURE;
   }
 
+  if(ctx.subscribe && ctx.flags != 0 ) {
+    TOLOG(LOG_ERR, "subscribe option does not accept 'flags' parameter");
+    return RESULT_FAILURE;
+  }
+
 	return RC_SUCCESS;
 }
 
@@ -253,21 +263,28 @@ void usage(const char* program) {
   printf("       %s %s", program, "--pub [options]\r\n");
   printf("       %s %s", program, "--sub [options]\r\n");
   printf("OPTIONS\r\n");
-  printf(" --%s <file>\r\n\t%s\r\n",                                      L_OPT_CAFILE,        "Sets a path to the file of CA certificates in PEM format.");
-  printf(" --%s <dir>\r\n\t%s\r\n",                                       L_OPT_CAPATH,        "Sets a directory containing CA certificates in PEM format.");
-  printf(" -%c user_id, --%s user_id\r\n\t%s\r\n",     S_OPT_USERID,      L_OPT_USERID,        "Sets user_id used during CONNECT packet creation. If not specified user_id is auto generated.");
-  printf(" -%c user_name, --%s user_name\r\n\t%s\r\n", S_OPT_USERNAME,    L_OPT_USERNAME,      "Sets user_name used during CONNECT packet creation.");
-  printf(" -%c password, --%s password\r\n\t%s\r\n",   S_OPT_PASSWORD,    L_OPT_PASSWORD,      "Sets password used during CONNECT packet creation.");
-  printf(" -%c size, --%s size\r\n\t%s\r\n",           S_OPT_BUFFER_SIZE, L_OPT_BUFFER_SIZE,   "Sets buffer size, which is dynamically allocated.");
-  printf(" -%c host_name, --%s host_name\r\n\t%s\r\n", S_OPT_HOST,        L_OPT_HOST,          "Sets remote host name or IP address.");
-  printf(" -%c message, --%s message\r\n\t%s\r\n",     S_OPT_MESSAGE,     L_OPT_MESSAGE,       "Sets the message used during PUBLISH packet creation.");
-  printf(" --%s message\r\n\t%s\r\n",                  L_OPT_MQTT_VERSION,                     "Sets MQTT protocol's version. If not specified version = 5.");
-  printf(" -%c port, --%s port\r\n\t%s\r\n",           S_OPT_PORT,        L_OPT_PORT,          "Sets the remote port to be used.");
-  printf(" -%c topic, --%s topic\r\n\t%s\r\n",         S_OPT_TOPIC,       L_OPT_TOPIC,         "Sets the topic used during PUBLISH or SUBSCRIBE packets creation.");
-  printf(" -%c, --%s\r\n\t%s\r\n",                     S_OPT_VERBOSE,     L_OPT_VERBOSE,       "Runs the program in verbose mode.");
-  printf(" --%s\r\n\t%s\r\n",                          L_OPT_PUBLISH,                          "Runs the program to publish the packet.");
-  printf(" --%s\r\n\t%s\r\n",                          L_OPT_SUBSCRIBE,                        "Runs the program to subscribe packets.");
-  printf(" --%s\r\n\t%s\r\n",                          L_OPT_REUSE_ADDR,                       "Turns on to reuse the the address.");
+  printf(" -%c <size>, --%s <size>\r\n\t%s\r\n",           S_OPT_BUFFER_SIZE, L_OPT_BUFFER_SIZE,   "Sets buffer size, which is dynamically allocated.");
+  printf(" --%s <file>\r\n\t%s\r\n",                                          L_OPT_CAFILE,        "Sets a path to the file of CA certificates in PEM format.");
+  printf(" --%s <dir>\r\n\t%s\r\n",                                           L_OPT_CAPATH,        "Sets a directory containing CA certificates in PEM format.");
+  printf(" --%s <file>\r\n\t%s\r\n",                                          L_OPT_CERT,          "Sets a user's certificate in PEM format");
+  printf(" --%s\r\n\t%s\r\n",                                                 L_OPT_FLAGS,         "Sets the MQTT Publish packet Fixed Header flags. Default: `00`.");
+  printf(" -%c <host_name>, --%s <host_name>\r\n\t%s\r\n", S_OPT_HOST,        L_OPT_HOST,          "Sets remote host name or IP address.");
+  printf(" --%s <dir>\r\n\t%s\r\n",                                           L_OPT_KEY,           "Sets a user's certificate private key in PEM format");
+  printf(" -%c <message>, --%s <message>\r\n\t%s\r\n",     S_OPT_MESSAGE,     L_OPT_MESSAGE,       "Sets the message used only during PUBLISH packet creation.");
+  printf(" --%s <version>\r\n\t%s\r\n",                                       L_OPT_MQTT_VERSION,  "Sets MQTT protocol's version (4 or 5). Default: 5.");
+  printf(" -%c <password>, --%s <password>\r\n\t%s\r\n",   S_OPT_PASSWORD,    L_OPT_PASSWORD,      "Sets password used during CONNECT packet creation.");
+  printf(" -%c <port>, --%s <port>\r\n\t%s\r\n",           S_OPT_PORT,        L_OPT_PORT,          "Sets the remote port to be used. Default: 1884.");
+  printf(" --%s\r\n\t%s\r\n",                                                 L_OPT_PUB,           "Runs the program to publish the packet.");
+  printf(" --%s\r\n\t%s\r\n",                                                 L_OPT_PUBLISH,       "Runs the program to publish the packet.");
+  printf(" --%s\r\n\t%s\r\n",                                                 L_OPT_REUSE_ADDR,    "Turns on to reuse the the address. Default: NO.");
+  printf(" --%s\r\n\t%s\r\n",                                                 L_OPT_SUB,           "Runs the program to subscribe packets.");
+  printf(" --%s\r\n\t%s\r\n",                                                 L_OPT_SUBSCRIBE,     "Runs the program to subscribe packets.");
+  printf(" -%c <topic>, --%s <topic>\r\n\t%s\r\n",         S_OPT_TOPIC,       L_OPT_TOPIC,         "Sets the topic used during PUBLISH or SUBSCRIBE packets creation.");
+  printf(" -%c <user_id>, --%s <user_id>\r\n\t%s\r\n",     S_OPT_USERID,      L_OPT_USERID,        "Sets user_id used during CONNECT packet creation. If not specified user_id is auto generated.");
+  printf(" -%c <user_name>, --%s <user_name>\r\n\t%s\r\n", S_OPT_USERNAME,    L_OPT_USERNAME,      "Sets user_name used during CONNECT packet creation.");
+  printf(" -%c, --%s\r\n\t%s\r\n",                         S_OPT_VERBOSE,     L_OPT_VERBOSE,       "Runs the program in verbose mode.");
+
+
 	printf("\r\n");
 }
 
@@ -464,7 +481,7 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
   mqtt_subscribe_params_t subscribe_params;
 
   if(ctx.publish == 1) {
-    publish_params.flags = 0x02;
+    publish_params.flags = ctx.flags;
     publish_params.message = (lv_t) {.length=strlen(ctx.message), .value=ctx.message };
     if(ctx.mqtt_version >= 5) {
       publish_params.properties = PROPERTIES;

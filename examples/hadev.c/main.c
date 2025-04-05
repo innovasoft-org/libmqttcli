@@ -20,8 +20,14 @@
 #include "utils.h"
 #include "../../api/mqtt_cli.h"
 
-const char* unique_id = "hadev123456";
-const char* base_topic = "homeassistant/switch/hadev123456";
+#define STATE_NONE        ( (uint8_t) 0 )
+#define STATE_DISCOVERY   ( (uint8_t) 1 )
+#define STATE_SYNCHRO     ( (uint8_t) 2 )
+#define STATE_OPERATIONAL ( (uint8_t) 3 )
+
+const char* ha_status = "homeassistant/status";
+const char* ha_online = "online";
+const char* base_topic = "homeassistant/switch";
 const char* command_topic = "set";
 const char* state_topic = "state";
 const char* availability_topic = "available";
@@ -41,14 +47,18 @@ static clv_t* buffer;
 /* Stores current switch state (on or off) */
 static uint8_t toggle = 0;
 
+static uint8_t state = STATE_NONE;
+
 static struct option long_options[] = {
-  {L_OPT_HOST,        required_argument,  0,  S_OPT_HOST},
-  {L_OPT_PORT,        required_argument,  0,  S_OPT_PORT},
   {L_OPT_BUFFER_SIZE, required_argument,  0,  S_OPT_BUFFER_SIZE},
+  {L_OPT_HOST,        required_argument,  0,  S_OPT_HOST},
+  {L_OPT_MQTT_VERSION,required_argument,  0,  S_OPT_MQTT_VERSION},
+  {L_OPT_PASSWORD,    required_argument,  0,  S_OPT_PASSWORD},
+  {L_OPT_PORT,        required_argument,  0,  S_OPT_PORT},
   {L_OPT_REUSE_ADDR,  required_argument,  0,  S_OPT_REUSE_ADDR},
+  {L_OPT_UNIQUE_ID,   required_argument,  0,  S_OPT_UNIQUE_ID},
   {L_OPT_USERID,      required_argument,  0,  S_OPT_USERID},
   {L_OPT_USERNAME,    required_argument,  0,  S_OPT_USERNAME},
-  {L_OPT_PASSWORD,    required_argument,  0,  S_OPT_PASSWORD},
   {L_OPT_VERBOSE,     no_argument,        0,  S_OPT_VERBOSE},
   {NULL,              no_argument,        0,  0}
 };
@@ -72,6 +82,7 @@ int validate_args(int argc, char **argv) {
   ctx.optval_reuse_addr = 0x00;
   ctx.buffer_size = DEFAULT_BUFFER_SIZE;
   ctx.non_blocking = 1;
+  ctx.mqtt_version = 5;
 
   if(NULL == strstr(argv[0], PROGRAM_NAME)) {
     TOLOG(LOG_ERR,"Program name was changed to %s",argv[0]);
@@ -85,31 +96,8 @@ int validate_args(int argc, char **argv) {
       break;
     }
     switch(c) {
-      case S_OPT_VERBOSE:
-        ctx.verbose = 1;
-        ctx.log_fd = stdout;
-        ctx.log_max_level = LOG_INFO;
-        break;
-      case S_OPT_USERID:
-        length = strlen( optarg );
-        if(length > sizeof(ctx.userid) / sizeof(char) ) {
-          TOLOG(LOG_ERR, "Invalid userid length");
-        }
-        memcpy(ctx.userid, optarg, length);        
-        break;
-      case S_OPT_USERNAME:
-        length = strlen( optarg );
-        if(length > sizeof(ctx.username) / sizeof(char) ) {
-          TOLOG(LOG_ERR, "Invalid username length");
-        }
-        memcpy(ctx.username, optarg, length);        
-        break;
-      case S_OPT_PASSWORD:
-        length = strlen( optarg );
-        if(length > sizeof(ctx.password) / sizeof(char) ) {
-          TOLOG(LOG_ERR, "Invalid password length");
-        }
-        memcpy(ctx.password, optarg, length);        
+      case S_OPT_BUFFER_SIZE:
+        ctx.buffer_size = atoi( optarg );
         break;
       case S_OPT_HOST:
         length = strlen( optarg );
@@ -118,14 +106,47 @@ int validate_args(int argc, char **argv) {
         }
         memcpy(ctx.ip, optarg, length);
         break;
+      case S_OPT_MQTT_VERSION:
+        ctx.mqtt_version = atoi( optarg );
+        break;
+      case S_OPT_PASSWORD:
+        length = strlen( optarg );
+        if(length > sizeof(ctx.password) / sizeof(char) ) {
+          TOLOG(LOG_ERR, "Invalid 'password' length");
+        }
+        memcpy(ctx.password, optarg, length);        
+        break;
       case S_OPT_PORT:
         ctx.port = atoi( optarg );
         break;
-      case S_OPT_BUFFER_SIZE:
-        ctx.buffer_size = atoi( optarg );
-        break;
       case S_OPT_REUSE_ADDR:
         ctx.optval_reuse_addr = 1;
+        break;
+      case S_OPT_UNIQUE_ID:
+        length = strlen( optarg );
+        if(length > (sizeof(ctx.uniqueid) / sizeof(char) - 1) ) {
+          TOLOG(LOG_ERR, "Invalid 'unique-id' length");
+        }
+        memcpy(ctx.uniqueid, optarg, length);        
+        break;
+      case S_OPT_USERID:
+        length = strlen( optarg );
+        if(length > sizeof(ctx.userid) / sizeof(char) ) {
+          TOLOG(LOG_ERR, "Invalid 'userid' length");
+        }
+        memcpy(ctx.userid, optarg, length);        
+        break;
+      case S_OPT_USERNAME:
+        length = strlen( optarg );
+        if(length > sizeof(ctx.username) / sizeof(char) ) {
+          TOLOG(LOG_ERR, "Invalid 'username' length");
+        }
+        memcpy(ctx.username, optarg, length);        
+        break;
+      case S_OPT_VERBOSE:
+        ctx.verbose = 1;
+        ctx.log_fd = stdout;
+        ctx.log_max_level = LOG_INFO;
         break;
       case '?':
         return RESULT_FAILURE;
@@ -136,12 +157,17 @@ int validate_args(int argc, char **argv) {
   }
 
   if( ctx.username[0] == 0x00 ) {
-    TOLOG(LOG_ERR, "'--username' option required");
+    TOLOG(LOG_ERR, "'username' option required");
     return RESULT_FAILURE;
   }
 
   if( ctx.password[0] == 0x00 ) {
-    TOLOG(LOG_ERR, "'--password' option required");
+    TOLOG(LOG_ERR, "'password' option required");
+    return RESULT_FAILURE;
+  }
+
+  if( ctx.uniqueid[0] == 0x00 ) {
+    TOLOG(LOG_ERR, "'unique' option required");
     return RESULT_FAILURE;
   }
 
@@ -179,17 +205,18 @@ void usage(const char* program) {
   printf("NAME\r\n");
 	printf("       %s\r\n", program);
   printf("SYNOPSIS\r\n");
-  printf("       %s %s", program, "--pub [options]\r\n");
-  printf("       %s %s", program, "--sub [options]\r\n");
+  printf("       %s %s", program, "[options]\r\n");
   printf("OPTIONS\r\n");
-  printf(" -%c user_id, --%s user_id\r\n\t%s\r\n",     S_OPT_USERID,      L_OPT_USERID,        "Sets user_id used during CONNECT packet creation. If not specified user_id is auto generated.");
-  printf(" -%c user_name, --%s user_name\r\n\t%s\r\n", S_OPT_USERNAME,    L_OPT_USERNAME,      "Sets user_name used during CONNECT packet creation.");
-  printf(" -%c password, --%s password\r\n\t%s\r\n",   S_OPT_PASSWORD,    L_OPT_PASSWORD,      "Sets password used during CONNECT packet creation.");
-  printf(" -%c size, --%s size\r\n\t%s\r\n",           S_OPT_BUFFER_SIZE, L_OPT_BUFFER_SIZE,   "Sets buffer size, which is dynamically allocated.");
-  printf(" -%c host_name, --%s host_name\r\n\t%s\r\n", S_OPT_HOST,        L_OPT_HOST,          "Sets remote host name or IP address.");
-  printf(" -%c port, --%s port\r\n\t%s\r\n",           S_OPT_PORT,        L_OPT_PORT,          "Sets the remote port to be used.");
-  printf(" -%c, --%s\r\n\t%s\r\n",                     S_OPT_VERBOSE,     L_OPT_VERBOSE,       "Runs the program in verbose mode.");
-  printf(" --%s\r\n\t%s\r\n",                          L_OPT_REUSE_ADDR,                       "Turns on to reuse the the address.");
+  printf(" -%c <size>, --%s <size>\r\n\t%s\r\n",           S_OPT_BUFFER_SIZE, L_OPT_BUFFER_SIZE,   "Sets buffer size, which is dynamically allocated.");
+  printf(" -%c <host_name>, --%s <host_name>\r\n\t%s\r\n", S_OPT_HOST,        L_OPT_HOST,          "Sets remote host name or IP address.");
+  printf(" -%c <password>, --%s <password>\r\n\t%s\r\n",   S_OPT_PASSWORD,    L_OPT_PASSWORD,      "Sets password used during CONNECT packet creation.");
+  printf(" -%c <port>, --%s <port>\r\n\t%s\r\n",           S_OPT_PORT,        L_OPT_PORT,          "Sets the remote port to be used.");
+  printf(" --%s\r\n\t%s\r\n",                                                 L_OPT_REUSE_ADDR,    "Turns on to reuse the the address.");
+  printf(" --%s <unique_id>\r\n\t%s\r\n",                                     L_OPT_UNIQUE_ID,     "Sets device's unique id");
+  printf(" -%c <user_id>, --%s <user_id>\r\n\t%s\r\n",     S_OPT_USERID,      L_OPT_USERID,        "Sets user_id used during CONNECT packet creation. If not specified user_id is auto generated.");
+  printf(" -%c <user_name>, --%s <user_name>\r\n\t%s\r\n", S_OPT_USERNAME,    L_OPT_USERNAME,      "Sets user_name used during CONNECT packet creation.");
+  printf(" --%s <version>\r\n\t%s\r\n",                                       L_OPT_MQTT_VERSION,  "Sets MQTT protocol's version (4 or 5). Default: 5.");
+  printf(" -%c, --%s\r\n\t%s\r\n",                         S_OPT_VERBOSE,     L_OPT_VERBOSE,       "Runs the program in verbose mode.");
 	printf("\r\n");
 }
 
@@ -357,45 +384,11 @@ int process_and_send_data(int sock, mqtt_cli_t *cli, clv_t *data, mqtt_channel_t
 
 mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
   mqtt_rc_t rc = RC_SUCCESS;
-  uint8_t *message;
-  int offset;
-  mqtt_publish_params_t publish_params = { };
   mqtt_subscribe_params_t subscribe_params = { };
 
-  /* Publishing configuration */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/config", base_topic );
-  message = publish_params.message.value = buffer->value + publish_params.topic.length;
-  offset = 0;
-  message[0] = '{';
-  offset += 1;
-  offset += sprintf( message + offset, "\"~\": \"%s\",", base_topic );
-  offset += sprintf( message + offset, "\"name\": null,");
-  offset += sprintf( message + offset, "\"uniq_id\": \"%s\",", unique_id);
-  offset += sprintf( message + offset, "\"cmd_t\": \"~/%s\",", command_topic);
-  offset += sprintf( message + offset, "\"stat_t\": \"~/%s\",", state_topic);
-  offset += sprintf( message + offset, "\"avty_t\": \"~/%s\",", availability_topic);
-  offset += sprintf( message + offset, "\"schema\": \"json\",");
-  offset += sprintf( message + offset, "\"pl_on\": \"%s\",", payload_on);
-  offset += sprintf( message + offset, "\"pl_off\": \"%s\",", payload_off);
-  offset += sprintf( message + offset, "\"pl_avail\" : \"%s\",", payload_available);
-  offset += sprintf( message + offset, "\"pl_not_avail\": \"%s\",", payload_not_available);
-  offset += sprintf( message + offset, "\"stat_on\": \"%s\",", state_on);
-  offset += sprintf( message + offset, "\"stat_off\": \"%s\",", state_off);
-  offset += sprintf( message + offset, "\"ret\": \"false\",");
-  offset += sprintf( message + offset, "\"opt\": \"false\",");
-  offset += sprintf( message + offset, "\"dev\": {\"ids\": \"ea334450945afc\",\"name\": \"acme_dev\",\"mf\": \"ACME\",\"mdl\": \"xya\",\"sw\": \"1.0\",\"sn\": \"ea334450945afc\",\"hw\": \"1.0rev2\"},");
-  offset += sprintf( message + offset, "\"o\": {\"name\":\"mqttcli\",\"sw\": \"1.0\",\"url\": \"https://innovasoft.org\"}");
-  offset += sprintf( message + offset, "}");
-  publish_params.message.length = offset;
-  if( MQTT_SUCCESS != self->publish(self, &publish_params) ) {
-    rc =  RC_IMPL_SPEC_ERR;
-    goto finish;   
-  }
-
-  /* Subscribing to receive commands */
+  /* Subscribe to receive homeassistant status (it shall be configured in mosquito plugin) */
   subscribe_params.filter.value = buffer->value;
-  subscribe_params.filter.length = sprintf( buffer->value, "%s/%s", base_topic, command_topic );
+  subscribe_params.filter.length = sprintf( buffer->value, "homeassistant/status" );
   if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
     rc =  RC_IMPL_SPEC_ERR;
     goto finish;   
@@ -405,66 +398,96 @@ finish:
   return rc;
 }
 
-void cb_suback(const mqtt_cli_ctx_cb_t *self, const mqtt_suback_t *pkt, const mqtt_channel_t *channel) {
-  uint8_t *message;
-  mqtt_publish_params_t publish_params = { };
-
-  /* Publishing current device availability */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, availability_topic );
-  message = publish_params.message.value = buffer->value + publish_params.topic.length;
-  publish_params.message.length = sprintf( message, "%s", payload_available );
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    goto finish;   
-  }
-
-  /* Publishing current device state */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, state_topic );
-  message = publish_params.message.value = buffer->value + publish_params.topic.length;
-  publish_params.message.length = sprintf( message, "%s", ( toggle > 0 ) ? state_on : state_off );
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    goto finish;   
-  }
-
-  /* Delay publishing to let HA initialize new device */
-  sleep( 2 );
-
-finish:
-  return;
-}
-
 mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
   mqtt_rc_t rc = RC_SUCCESS;
   mqtt_publish_params_t publish_params = { };
+  mqtt_subscribe_params_t subscribe_params = { };
   size_t offset;
+  uint8_t *message;
 
-  /* Updating device internal state */
-  if(pkt->message.length == strlen(payload_on) && 0 == memcmp( pkt->message.value, payload_on, pkt->message.length) ) {
-    toggle = 1;
-  }
-  else if(pkt->message.length == strlen(payload_off) && 0 == memcmp( pkt->message.value, payload_off, pkt->message.length) ) {
-    toggle = 0;
+  /* Check if Home Assistant is online */
+  if( (strlen(ha_status) == pkt->topic.length) && 
+      (0 == memcmp(pkt->topic.value, ha_status, pkt->topic.length)) &&
+      (strlen(ha_online) == pkt->message.length) &&
+      (0 == memcmp(pkt->message.value, ha_online, pkt->message.length)) ) {
+    state = STATE_DISCOVERY;
+    /* Publishing configuration */
+    publish_params.topic.value = buffer->value;
+    publish_params.topic.length = sprintf( buffer->value, "%s/%s/config", base_topic, ctx.uniqueid );
+    message = publish_params.message.value = buffer->value + publish_params.topic.length;
+    offset = 0;
+    message[0] = '{';
+    offset += 1;
+    offset += sprintf( message + offset, "\"~\": \"%s/%s\",", base_topic, ctx.uniqueid );
+    offset += sprintf( message + offset, "\"device_class\": \"switch\",");
+    offset += sprintf( message + offset, "\"name\": null,");
+    offset += sprintf( message + offset, "\"uniq_id\": \"%s\",", ctx.uniqueid);
+    offset += sprintf( message + offset, "\"cmd_t\": \"~/%s\",", command_topic);
+    offset += sprintf( message + offset, "\"stat_t\": \"~/%s\",", state_topic);
+    offset += sprintf( message + offset, "\"avty_t\": \"~/%s\",", availability_topic);
+    offset += sprintf( message + offset, "\"schema\": \"json\",");
+    offset += sprintf( message + offset, "\"pl_on\": \"%s\",", payload_on);
+    offset += sprintf( message + offset, "\"pl_off\": \"%s\",", payload_off);
+    offset += sprintf( message + offset, "\"pl_avail\" : \"%s\",", payload_available);
+    offset += sprintf( message + offset, "\"pl_not_avail\": \"%s\",", payload_not_available);
+    offset += sprintf( message + offset, "\"stat_on\": \"%s\",", state_on);
+    offset += sprintf( message + offset, "\"stat_off\": \"%s\",", state_off);
+    offset += sprintf( message + offset, "\"ret\": \"false\",");
+    offset += sprintf( message + offset, "\"opt\": \"false\",");
+    offset += sprintf( message + offset, "\"dev\": {\"ids\": \"%s\",\"name\": \"%s\",\"mf\": \"ACME\",\"mdl\": \"xya\",\"sw\": \"1.0\",\"sn\": \"%s\",\"hw\": \"1.0rev2\"},", ctx.uniqueid, ctx.uniqueid, ctx.uniqueid);
+    offset += sprintf( message + offset, "\"o\": {\"name\":\"mqttcli\",\"sw\": \"1.0\",\"url\": \"https://innovasoft.org\"}");
+    offset += sprintf( message + offset, "}");
+    publish_params.message.length = offset;
+    publish_params.flags = 0x01;
+    if( MQTT_SUCCESS != self->publish(self, &publish_params) ) {
+      rc =  RC_IMPL_SPEC_ERR;
+      goto finish;   
+    }
+
+    /* Subscribing to receive commands */
+    subscribe_params.filter.value = buffer->value;
+    subscribe_params.filter.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, command_topic );
+    if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
+      rc =  RC_IMPL_SPEC_ERR;
+      goto finish;   
+    }
+    goto finish;;
   }
 
-  /* Publishing current state */
-  publish_params.topic.value = buffer->value;
-  publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, state_topic );
-  publish_params.message = pkt->message;
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    rc =  RC_IMPL_SPEC_ERR;
+  if(state == STATE_OPERATIONAL) {
+    /* Updating device internal state */
+    if(pkt->message.length == strlen(payload_on) && 0 == memcmp( pkt->message.value, payload_on, pkt->message.length) ) {
+      toggle = 1;
+    }
+    else if(pkt->message.length == strlen(payload_off) && 0 == memcmp( pkt->message.value, payload_off, pkt->message.length) ) {
+      toggle = 0;
+    }
+    else {
+      rc =  RC_PAYLOAD_INV;
+      goto finish; 
+    }
+
+    /* Publishing current state */
+    publish_params.topic.value = buffer->value;
+    publish_params.topic.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, state_topic );
+    publish_params.message = pkt->message;
+    if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
+      rc =  RC_IMPL_SPEC_ERR;
+    }
   }
 
+
+finish:
   return rc;
 }
 
 int main(int argc, char** argv) {
-  uint8_t *recv_buf = NULL, *tmp_buf = NULL;
+  uint8_t *recv_buf = NULL, *tmp_buf = NULL, timeout_counter = 2;
   uint16_t rc;
   uint32_t srv_ip;
   size_t length, recv_buf_len, recv_buf_off, recv_len, i;
   char *log_str = NULL, c;
-  int result, optval, ret, log_str_len, sock;
+  int result, optval, ret, log_str_len, sock = 0;
   struct sigaction sa;
   struct sockaddr_in server;
   struct hostent *host = NULL;
@@ -577,6 +600,10 @@ int main(int argc, char** argv) {
     printf("Initializing MQTT client...");
   }
   mqtt_params.bufsize = ctx.buffer_size;
+  mqtt_params.timeout = 1;
+  mqtt_params.version = ctx.mqtt_version;
+  mqtt_params.qos = 0;
+  mqtt_params.max_pkt_id = 8;
   if( MQTT_SUCCESS != (rc = mqtt_cli_init_ex( &cli, &mqtt_params )) ) {
     TOLOG(LOG_ERR,"mqtt_cli_init( ... ), rc = %d", rc);
     rc = RESULT_FAILURE;
@@ -592,11 +619,10 @@ int main(int argc, char** argv) {
   }
   cli.set_cb_connack( &cli, cb_connack );
   cli.set_cb_publish( &cli, cb_publish );
-  cli.set_cb_suback( &cli, cb_suback );
   cli.set_br_ip( &cli, srv_ip);
   cli.set_br_keepalive( &cli, (uint16_t) 60);
   will_params.topic.value = buffer->value;
-  will_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, availability_topic );
+  will_params.topic.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, availability_topic );
   will_params.payload.value = buffer->value + will_params.topic.length;
   will_params.payload.length = sprintf( buffer->value + will_params.topic.length, "%s", payload_not_available );
   if( MQTT_SUCCESS != (rc = cli.set_br_will( &cli, &will_params) ) ) {
@@ -689,27 +715,54 @@ int main(int argc, char** argv) {
       else if(result == RESULT_EXIT) {
         TOLOG(LOG_ERR, "Connection closed");
         break;
-      }    
-    }
-    /* Prepare the read stdin (fd = 0) sets for network I/O notification */
-    FD_ZERO(&readfds);
-    /* Set read notification for the socket */
-    FD_SET(0, &readfds);	  /* Wait until the socket has data ready to be read (until timeout occurs) */
-	  if( -1 == (result = select( 1, &readfds, NULL, NULL, &tv)) ) {
-      if(EINTR == errno ) {
-        continue;
       }
-		  TOLOG(LOG_ERR,"select( ... ), errno = %d", errno);
-      result = RESULT_FAILURE;
-      goto finish;
-	  }
-    if(result && FD_ISSET(0, &readfds) && 0x20 == getchar()) {
+
+      if( state == STATE_DISCOVERY && timeout_counter > 0 ) {
+        --timeout_counter;
+      }
+      else if (state == STATE_DISCOVERY) {
+        state = STATE_SYNCHRO;
+      }
+    }
+
+    if( state == STATE_SYNCHRO ) {
+      /* Publishing current availability */
       publish_params.topic.value = buffer->value;
-      publish_params.topic.length = sprintf( buffer->value, "%s/%s", base_topic, state_topic);
+      publish_params.topic.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, availability_topic );
       publish_params.message.value = buffer->value + publish_params.topic.length;
-      toggle = (toggle > 0) ? 0 : 1;
+      publish_params.message.length = sprintf( buffer->value + publish_params.topic.length, "%s", payload_available);
+      cli.publish( &cli, &publish_params);
+
+      /* Publishing current state */
+      publish_params.topic.value = buffer->value;
+      publish_params.topic.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, state_topic );
+      publish_params.message.value = buffer->value + publish_params.topic.length;
       publish_params.message.length = sprintf( buffer->value + publish_params.topic.length, "%s", ( toggle > 0 ) ? state_on : state_off);
       cli.publish( &cli, &publish_params);
+      state = STATE_OPERATIONAL;
+    }
+
+    if(state == STATE_OPERATIONAL) {
+      /* Prepare the read stdin (fd = 0) sets for network I/O notification */
+      FD_ZERO(&readfds);
+      /* Set read notification for the socket */
+      FD_SET(0, &readfds);	  /* Wait until the socket has data ready to be read (until timeout occurs) */
+      if( -1 == (result = select( 1, &readfds, NULL, NULL, &tv)) ) {
+        if(EINTR == errno ) {
+          continue;
+        }
+        TOLOG(LOG_ERR,"select( ... ), errno = %d", errno);
+        result = RESULT_FAILURE;
+        goto finish;
+      }
+      if(result && FD_ISSET(0, &readfds) && 0x20 == getchar()) {
+        publish_params.topic.value = buffer->value;
+        publish_params.topic.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, state_topic);
+        publish_params.message.value = buffer->value + publish_params.topic.length;
+        toggle = (toggle > 0) ? 0 : 1;
+        publish_params.message.length = sprintf( buffer->value + publish_params.topic.length, "%s", ( toggle > 0 ) ? state_on : state_off);
+        cli.publish( &cli, &publish_params);
+      }
     }
 
     /* Prepare the read socket sets for network I/O notification */
@@ -816,10 +869,10 @@ finish:
   if(NULL != recv_buf) {
     free( recv_buf );
   }
-  if(NULL != buffer->value) {
-    free( buffer->value );
-  }
   if( NULL != buffer) {
+    if(NULL != buffer->value) {
+      free( buffer->value );
+    }
     free( buffer );
     buffer = NULL;
   }
