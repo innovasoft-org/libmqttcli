@@ -10,12 +10,16 @@
 &emsp;&emsp;Uses specified in bytes buffer size which is used to receive and send new packets. By default 1024 B size is used.   
 &emsp;_-h host, --host host_  
 &emsp;&emsp;Uses specified host to connect to. By default localhost is used.  
+&emsp;_--mqtt-version version_  
+&emsp;&emsp;Sets MQTT protocol's version (4 or 5). By default 5 is used.  
 &emsp;_-P password, --password password_  
 &emsp;&emsp;Uses specified password. By default none password is iused.   
 &emsp;_-p port, --port port_  
 &emsp;&emsp;Uses specified port number to connect to. By default 1884 port is used.  
 &emsp;_--reuse-addr_  
 &emsp;&emsp;Indicates that the rules used in validating addresses supplied in a `bind` call should allow reuse of local addresses. By default it is disabled.  
+&emsp;_--unique-id_  
+&emsp;&emsp;Sets device's unique id  
 &emsp;_-I user_id, --userid user_id_  
 &emsp;&emsp;Uses specified user ID. By default randomly generated user id is used.  
 &emsp;_-N user_name, --username user_name_  
@@ -26,7 +30,7 @@
 # Examples
 1. Client establishes connection to the `homeassistant.local` and starts working as typical switch device.
 ```
-hadev -h homeassistant.local -p 1883 -I UID12345678 -N testuser12345678 -P homeassistantpassword -v
+hadev -h homeassistant.local -p 1883 -N testuser12345678 -P homeassistantpassword --unique-id acme_000001 -v
 ```
 # Screenshots
 Typical use cases of the program were presented on: <a href="#fig01">Fig. 1</a>, <a href="#fig02">Fig. 2</a>, <a href="#fig03">Fig. 3</a> and <a href="#fig04">Fig. 4</a>.
