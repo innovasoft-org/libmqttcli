@@ -398,17 +398,6 @@ finish:
   return rc;
 }
 
-void cb_suback(const mqtt_cli_ctx_cb_t *self, const mqtt_suback_t *pkt, const mqtt_channel_t *channel) {
-  uint8_t *message;
-  mqtt_publish_params_t publish_params = { };
-
-  /* Delay publishing to let HA initialize new device */
-  //sleep( 5 );
-
-finish:
-  return;
-}
-
 mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
   mqtt_rc_t rc = RC_SUCCESS;
   mqtt_publish_params_t publish_params = { };
@@ -630,7 +619,6 @@ int main(int argc, char** argv) {
   }
   cli.set_cb_connack( &cli, cb_connack );
   cli.set_cb_publish( &cli, cb_publish );
-  cli.set_cb_suback( &cli, cb_suback );
   cli.set_br_ip( &cli, srv_ip);
   cli.set_br_keepalive( &cli, (uint16_t) 60);
   will_params.topic.value = buffer->value;
