@@ -59,37 +59,41 @@
 /** Long option: verbose */
 #define L_OPT_VERBOSE       "verbose"
 /** Short option: publish */
-#define S_OPT_PUBLISH       '\1'
+#define S_OPT_PUBLISH       ((int) 1)
 /** Long option: publish */
 #define L_OPT_PUBLISH       "publish"
 /** Long option: pub */
 #define L_OPT_PUB           "pub"
 /** Short option: subscribe */
-#define S_OPT_SUBSCRIBE     '\2'
+#define S_OPT_SUBSCRIBE     ((int) 2)
 /** Long option: subscribe */
 #define L_OPT_SUBSCRIBE     "subscribe"
 /** Long option: sub */
 #define L_OPT_SUB           "sub"
 /** Short option: mqtt-version */
-#define S_OPT_MQTT_VERSION  '\3'
+#define S_OPT_MQTT_VERSION  ((int) 3)
 /** Long option: mqtt-version */
 #define L_OPT_MQTT_VERSION  "mqtt-version"
 /** Short option: cafile */
-#define S_OPT_CAFILE        '\4'
+#define S_OPT_CAFILE        ((int) 4)
 /** Long option: cafile */
 #define L_OPT_CAFILE        "cafile"
 /** Short option: capath */
-#define S_OPT_CAPATH        '\5'
+#define S_OPT_CAPATH        ((int) 5)
 /** Long option: capath */
 #define L_OPT_CAPATH        "capath"
 /** Short option: cert */
-#define S_OPT_CERT          '\6'
+#define S_OPT_CERT          ((int) 6)
 /** Long option: cert */
 #define L_OPT_CERT          "cert"
 /** Short option: key */
-#define S_OPT_KEY           '\7'
+#define S_OPT_KEY           ((int) 7)
 /** Long option: key */
 #define L_OPT_KEY           "key"
+/** Short option: flags */
+#define S_OPT_FLAGS         ((int) 8)
+/** Long option: flags */
+#define L_OPT_FLAGS         "flags"
 
 #define LOG_EMERG 0
 #define LOG_ALERT 1
@@ -153,12 +157,12 @@ typedef struct program_ctx {
   char *cert;
   /** Stores the path to the user's certificate private key*/
   char* key;
+  /** Stores Publish Packet Fixed Header flags (if any) */
+  uint8_t flags;
 } context_t;
 
 #define IS_MULTICAST(IPADDR) ( (IPADDR & 0x000000E0) == 0x000000E0 )
 
 void log_write(int level, char* filename, int line, char *fmt,...);
-
-#define TOLOG(level, ...) log_write(level, __FILE__, __LINE__, __VA_ARGS__ )
 
 #endif /* __COMMON_H__ */
