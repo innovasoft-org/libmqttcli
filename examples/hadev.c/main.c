@@ -14,13 +14,16 @@
 #include <stdarg.h> /* va_start, va_arg_, va_end */
 #include <time.h> /* time() */
 #include <signal.h> /* sigaction() ... */
+#include <pthread.h>
+#include <stdio.h>
 
 #include "main.h"
 #include "utils.h"
 #include "utils.h"
 #include "../../api/mqtt_cli.h"
 
-#define STATE_NONE        ( (uint8_t) 0 )
+#define STATE_STOPPED     ( (uint8_t) 0 )
+#define STATE_STARTED     ( (uint8_t) 1 )
 #define STATE_DISCOVERY   ( (uint8_t) 1 )
 #define STATE_SYNCHRO     ( (uint8_t) 2 )
 #define STATE_OPERATIONAL ( (uint8_t) 3 )
@@ -41,13 +44,14 @@ const char* state_off = "OFF";
 /** Program context */
 static context_t ctx;
 
-/** Global buffer used to send and perform operations on the data */
-static clv_t* buffer;
-
 /* Stores current switch state (on or off) */
 static uint8_t toggle = 0;
 
-static uint8_t state = STATE_NONE;
+static int timer_int;
+
+static uint8_t state = STATE_STOPPED;
+
+static pthread_mutex_t mutex;
 
 static struct option long_options[] = {
   {L_OPT_BUFFER_SIZE, required_argument,  0,  S_OPT_BUFFER_SIZE},
@@ -183,11 +187,15 @@ void signal_handler(int sig)
 	switch(sig)
 	{
 		case SIGALRM:
-			ctx.timer_int = 1;
+      pthread_mutex_lock(&mutex);
+			timer_int = 1;
+      pthread_mutex_unlock(&mutex);
 			break;
 		case SIGINT:
 		case SIGTERM:
-			ctx.state = 0;
+      pthread_mutex_lock(&mutex);
+			state = STATE_STOPPED;
+      pthread_mutex_unlock(&mutex);
 			break;
 		case SIGHUP:
 			TOLOG(LOG_WARNING,"Received SIGHUP signal.");
@@ -385,16 +393,28 @@ int process_and_send_data(int sock, mqtt_cli_t *cli, clv_t *data, mqtt_channel_t
 mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
   mqtt_rc_t rc = RC_SUCCESS;
   mqtt_subscribe_params_t subscribe_params = { };
+  uint8_t *buffer = NULL;
+
+  /* Resources allocation */
+  if( NULL == (buffer = (unsigned char*) malloc (ctx.buffer_size ))) {
+    TOLOG(LOG_CRIT, "Not enough memory");
+    goto finish;
+  }
 
   /* Subscribe to receive homeassistant status (it shall be configured in mosquito plugin) */
-  subscribe_params.filter.value = buffer->value;
-  subscribe_params.filter.length = sprintf( buffer->value, "homeassistant/status" );
+  subscribe_params.filter.value = buffer;
+  subscribe_params.filter.length = sprintf( buffer, "homeassistant/status" );
   if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
     rc =  RC_IMPL_SPEC_ERR;
     goto finish;   
   }
 
 finish:
+  /* Resources deallocation */
+  if(NULL != buffer) {
+    free( buffer );
+    buffer = NULL;
+  }
   return rc;
 }
 
@@ -403,18 +423,26 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
   mqtt_publish_params_t publish_params = { };
   mqtt_subscribe_params_t subscribe_params = { };
   size_t offset;
-  uint8_t *message;
+  uint8_t *message, *buffer = NULL;
+
+  /* Resources allocation */
+  if( NULL == (buffer = (unsigned char*) malloc (ctx.buffer_size ))) {
+    TOLOG(LOG_CRIT, "Not enough memory");
+    goto finish;
+  }
 
   /* Check if Home Assistant is online */
   if( (strlen(ha_status) == pkt->topic.length) && 
       (0 == memcmp(pkt->topic.value, ha_status, pkt->topic.length)) &&
       (strlen(ha_online) == pkt->message.length) &&
       (0 == memcmp(pkt->message.value, ha_online, pkt->message.length)) ) {
-    state = STATE_DISCOVERY;
+      pthread_mutex_lock(&mutex);
+      state = STATE_DISCOVERY;
+      pthread_mutex_unlock(&mutex);
     /* Publishing configuration */
-    publish_params.topic.value = buffer->value;
-    publish_params.topic.length = sprintf( buffer->value, "%s/%s/config", base_topic, ctx.uniqueid );
-    message = publish_params.message.value = buffer->value + publish_params.topic.length;
+    publish_params.topic.value = buffer;
+    publish_params.topic.length = sprintf( buffer, "%s/%s/config", base_topic, ctx.uniqueid );
+    message = publish_params.message.value = buffer + publish_params.topic.length;
     offset = 0;
     message[0] = '{';
     offset += 1;
@@ -445,8 +473,8 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
     }
 
     /* Subscribing to receive commands */
-    subscribe_params.filter.value = buffer->value;
-    subscribe_params.filter.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, command_topic );
+    subscribe_params.filter.value = buffer;
+    subscribe_params.filter.length = sprintf( buffer, "%s/%s/%s", base_topic, ctx.uniqueid, command_topic );
     if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
       rc =  RC_IMPL_SPEC_ERR;
       goto finish;   
@@ -468,8 +496,8 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
     }
 
     /* Publishing current state */
-    publish_params.topic.value = buffer->value;
-    publish_params.topic.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, state_topic );
+    publish_params.topic.value = buffer;
+    publish_params.topic.length = sprintf( buffer, "%s/%s/%s", base_topic, ctx.uniqueid, state_topic );
     publish_params.message = pkt->message;
     if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
       rc =  RC_IMPL_SPEC_ERR;
@@ -478,56 +506,54 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
 
 
 finish:
+  /* Resources deallocation */
+  if(NULL != buffer) {
+    free( buffer );
+    buffer = NULL;
+  }
   return rc;
 }
 
-int main(int argc, char** argv) {
-  uint8_t *recv_buf = NULL, *tmp_buf = NULL, timeout_counter = 2;
+void* thread_func(void* arg) {
+  uint8_t *buffer = NULL, *recv_buf = NULL, timeout_counter = 2, current_state, current_timer_int;
   uint16_t rc;
   uint32_t srv_ip;
-  size_t length, recv_buf_len, recv_buf_off, recv_len, i;
-  char *log_str = NULL, c;
-  int result, optval, ret, log_str_len, sock = 0;
-  struct sigaction sa;
+  char *log_str = NULL;
+  int log_str_len = 0, sock = 0, result;
+  size_t recv_buf_len = 0, length, recv_buf_off, recv_len, i;
+  clv_t *data = NULL;
   struct sockaddr_in server;
   struct hostent *host = NULL;
-  fd_set readfds;
-  struct timeval tv;
   mqtt_cli_t cli;
   mqtt_channel_t channel;
-  struct itimerval timer;
-  time_t now;
-  lv_t packet, cli_userid, cli_username, cli_password;
   mqtt_publish_params_t publish_params = {  };
   mqtt_will_params_t will_params = (mqtt_will_params_t) { };
   mqtt_params_t mqtt_params = { .max_pkt_id=8, .timeout=1, .version=4 };
+  time_t now;
+  fd_set readfds;
+  struct timeval tv;
+  lv_t packet, cli_userid, cli_username, cli_password;
 
-  /* Initialize */
-  memset( &cli, 0x00, sizeof(cli));
-
-  /* Validate arguments */
-  if(validate_args(argc, argv)) {
-    usage(argv[0]);
-    result = RESULT_FAILURE;
+  if(NULL == arg) {
     goto finish;
   }
 
-  show_info();
+  if(ctx.verbose) {
+    printf("Thread with id %lu was started.\r\n", pthread_self());
+  }
 
-  if( NULL == (buffer = (clv_t*) malloc( sizeof(clv_t) ) ) ) {
+  /* Allocating resources */
+  if( NULL == (data = (clv_t*) malloc( sizeof(clv_t) ) ) ) {
     TOLOG(LOG_CRIT, "Not enough memory");
     result = RESULT_FAILURE;
     goto finish;
   }
-
-  if( NULL == (tmp_buf = malloc( ctx.buffer_size ) ) ) {
+  if( NULL == (buffer = malloc( ctx.buffer_size ) ) ) {
     TOLOG(LOG_CRIT, "Not enough memory");
     result = RESULT_FAILURE;
     goto finish;
   }
-
-  memcpy( buffer, &(clv_t) { .capacity=ctx.buffer_size, .length=0, .value=tmp_buf }, sizeof(clv_t) );
-
+  memcpy( data, &(clv_t) { .capacity=ctx.buffer_size, .length=0, .value=buffer }, sizeof(clv_t) );
   if( NULL == (recv_buf = (unsigned char*) malloc (ctx.buffer_size ))) {
     TOLOG(LOG_CRIT, "Not enough memory");
     result = RESULT_FAILURE;
@@ -535,21 +561,12 @@ int main(int argc, char** argv) {
   }
   recv_buf_len = ctx.buffer_size;
   memset( recv_buf, 0x00, recv_buf_len );
-
   log_str_len = 2*ctx.buffer_size + ctx.buffer_size;
   if( NULL == (log_str = (unsigned char*) malloc ( log_str_len ))) {
     TOLOG(LOG_CRIT, "Not enough memory");
     result = RESULT_FAILURE;
     goto finish;
   }
-
-  /* Configure signal_handler as the signal handler for SIGALRM */
-  memset (&sa, 0, sizeof (sa));
-  sa.sa_handler = &signal_handler;
-  sigaction (SIGALRM, &sa, NULL);
-
-  /* Configure signal handler to stop the program on Ctrl+C pressed */
-  sigaction(SIGINT, &sa, NULL);
 
   /* Create the TCP/IP socket */
 	if( -1 == (sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))) {
@@ -595,7 +612,28 @@ int main(int argc, char** argv) {
     }
   }
 
+  /* Connecting to the server (broker) */
+  if(ctx.verbose) {
+    printf("Connecting to the server (broker)...");
+  }
+  if( -1 == connect(sock, (struct sockaddr*)&server, sizeof(server) ) ) {
+    TOLOG(LOG_ERR,"connect( ... ), errno = %d", errno);
+    result = RESULT_FAILURE;
+    goto finish;
+  }
+  if(ctx.verbose) {
+    printf("OK\r\n");
+  }
+
+  /* Start non-blocking mode */
+  if( -1 == ioctl(sock, FIONBIO, (char*) &ctx.non_blocking) ) {
+    TOLOG(LOG_ERR,"ioctl(sock, FIONBIO, ... ), errno = %d", errno);
+    result = RESULT_FAILURE;
+    goto finish;
+  }
+
   /* Initializing MQTT client */
+  memset( &cli, 0x00, sizeof(cli));
   if(ctx.verbose) {
     printf("Initializing MQTT client...");
   }
@@ -604,9 +642,9 @@ int main(int argc, char** argv) {
   mqtt_params.version = ctx.mqtt_version;
   mqtt_params.qos = 0;
   mqtt_params.max_pkt_id = 8;
-  if( MQTT_SUCCESS != (rc = mqtt_cli_init_ex( &cli, &mqtt_params )) ) {
+  if( MQTT_SUCCESS != mqtt_cli_init_ex( &cli, &mqtt_params ) ) {
     TOLOG(LOG_ERR,"mqtt_cli_init( ... ), rc = %d", rc);
-    rc = RESULT_FAILURE;
+    result = RESULT_FAILURE;
     goto finish;    
   }
   if(ctx.verbose) {
@@ -621,10 +659,10 @@ int main(int argc, char** argv) {
   cli.set_cb_publish( &cli, cb_publish );
   cli.set_br_ip( &cli, srv_ip);
   cli.set_br_keepalive( &cli, (uint16_t) 60);
-  will_params.topic.value = buffer->value;
-  will_params.topic.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, availability_topic );
-  will_params.payload.value = buffer->value + will_params.topic.length;
-  will_params.payload.length = sprintf( buffer->value + will_params.topic.length, "%s", payload_not_available );
+  will_params.topic.value = data->value;
+  will_params.topic.length = sprintf( data->value, "%s/%s/%s", base_topic, ctx.uniqueid, availability_topic );
+  will_params.payload.value = data->value + will_params.topic.length;
+  will_params.payload.length = sprintf( data->value + will_params.topic.length, "%s", payload_not_available );
   if( MQTT_SUCCESS != (rc = cli.set_br_will( &cli, &will_params) ) ) {
     TOLOG(LOG_ERR,"cli.set_br_will( ... ), rc = %d", rc);
     result = RESULT_FAILURE;
@@ -660,54 +698,26 @@ int main(int argc, char** argv) {
     printf("OK\r\n");
   }
 
-  /* Connecting to the server (broker) */
-  if(ctx.verbose) {
-    printf("Connecting to the server (broker)...");
-  }
-  if( -1 == connect(sock, (struct sockaddr*)&server, sizeof(server) ) ) {
-    TOLOG(LOG_ERR,"connect( ... ), errno = %d", errno);
-    result = RESULT_FAILURE;
-    goto finish;
-  }
-  if(ctx.verbose) {
-    printf("OK\r\n");
-  }
-
-  /* Start non-blocking mode */
-  if( -1 == ioctl(sock, FIONBIO, (char*) &ctx.non_blocking) ) {
-    TOLOG(LOG_ERR,"ioctl(sock, FIONBIO, ... ), errno = %d", errno);
-    result = RESULT_FAILURE;
-    goto finish;
-  }
-
-	/* Configure the timer to expire after n sec... */
-	timer.it_value.tv_sec = 1;
-	timer.it_value.tv_usec = 0;
-
-	/* ... and every n sec after that. */
-	timer.it_interval.tv_sec = 1;
-	timer.it_interval.tv_usec = 0;
-
-	/* Start a real timer. It counts down whenever this process is
-	   executing. */
-	setitimer (ITIMER_REAL, &timer, NULL);
-
-  if(ctx.verbose) {
-    printf("Press Ctrl+c to stop\r\n");
-  }
-
-  ctx.state = 1;
-	tv.tv_sec = 0;
+	tv.tv_sec = 1;
 	tv.tv_usec = 0;
   recv_buf_off = 0;
-  while( 1 == ctx.state ) {
+  while( 1 ) {
+    pthread_mutex_lock(&mutex);
+    current_state = state;
+    current_timer_int = timer_int;
+    timer_int = 0;
+    pthread_mutex_unlock(&mutex);
+
+    if( STATE_STOPPED == current_state ) {
+      break;
+    }
+
     /* Processing timeout (if any) */
-    if( ctx.timer_int ) {
-      ctx.timer_int = 0;
+    if( current_timer_int ) {
       channel.ip_address = 0;
       channel.user_id = 0;
-      buffer->length = 0;
-      result = process_and_send_data(sock, &cli, buffer, &channel, log_str, log_str_len);
+      data->length = 0;
+      result = process_and_send_data(sock, &cli, data, &channel, log_str, log_str_len);
       if(result == RESULT_FAILURE) {
         TOLOG(LOG_ERR, "Sending failed");
         break;
@@ -717,32 +727,38 @@ int main(int argc, char** argv) {
         break;
       }
 
-      if( state == STATE_DISCOVERY && timeout_counter > 0 ) {
+      if( current_state == STATE_DISCOVERY && timeout_counter > 0 ) {
         --timeout_counter;
       }
-      else if (state == STATE_DISCOVERY) {
-        state = STATE_SYNCHRO;
+      else if (current_state == STATE_DISCOVERY) {
+        current_state = STATE_SYNCHRO;
+        pthread_mutex_lock(&mutex);
+        state = current_state;
+        pthread_mutex_unlock(&mutex);
       }
     }
 
-    if( state == STATE_SYNCHRO ) {
+    if( current_state == STATE_SYNCHRO ) {
       /* Publishing current availability */
-      publish_params.topic.value = buffer->value;
-      publish_params.topic.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, availability_topic );
-      publish_params.message.value = buffer->value + publish_params.topic.length;
-      publish_params.message.length = sprintf( buffer->value + publish_params.topic.length, "%s", payload_available);
+      publish_params.topic.value = data->value;
+      publish_params.topic.length = sprintf( data->value, "%s/%s/%s", base_topic, ctx.uniqueid, availability_topic );
+      publish_params.message.value = data->value + publish_params.topic.length;
+      publish_params.message.length = sprintf( data->value + publish_params.topic.length, "%s", payload_available);
       cli.publish( &cli, &publish_params);
 
       /* Publishing current state */
-      publish_params.topic.value = buffer->value;
-      publish_params.topic.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, state_topic );
-      publish_params.message.value = buffer->value + publish_params.topic.length;
-      publish_params.message.length = sprintf( buffer->value + publish_params.topic.length, "%s", ( toggle > 0 ) ? state_on : state_off);
+      publish_params.topic.value = data->value;
+      publish_params.topic.length = sprintf( data->value, "%s/%s/%s", base_topic, ctx.uniqueid, state_topic );
+      publish_params.message.value = data->value + publish_params.topic.length;
+      publish_params.message.length = sprintf( data->value + publish_params.topic.length, "%s", ( toggle > 0 ) ? state_on : state_off);
       cli.publish( &cli, &publish_params);
-      state = STATE_OPERATIONAL;
+      current_state = STATE_OPERATIONAL;
+      pthread_mutex_lock(&mutex);
+      state = current_state;
+      pthread_mutex_unlock(&mutex);
     }
 
-    if(state == STATE_OPERATIONAL) {
+    if( current_state == STATE_OPERATIONAL) {
       /* Prepare the read stdin (fd = 0) sets for network I/O notification */
       FD_ZERO(&readfds);
       /* Set read notification for the socket */
@@ -756,11 +772,13 @@ int main(int argc, char** argv) {
         goto finish;
       }
       if(result && FD_ISSET(0, &readfds) && 0x20 == getchar()) {
-        publish_params.topic.value = buffer->value;
-        publish_params.topic.length = sprintf( buffer->value, "%s/%s/%s", base_topic, ctx.uniqueid, state_topic);
-        publish_params.message.value = buffer->value + publish_params.topic.length;
+        publish_params.topic.value = data->value;
+        publish_params.topic.length = sprintf( data->value, "%s/%s/%s", base_topic, ctx.uniqueid, state_topic);
+        publish_params.message.value = data->value + publish_params.topic.length;
         toggle = (toggle > 0) ? 0 : 1;
-        publish_params.message.length = sprintf( buffer->value + publish_params.topic.length, "%s", ( toggle > 0 ) ? state_on : state_off);
+        publish_params.message.length = sprintf( data->value + publish_params.topic.length, "%s", ( toggle > 0 ) ? state_on : state_off);
+        cli.publish( &cli, &publish_params);
+        publish_params.message.length = sprintf( data->value + publish_params.topic.length, "%s", ( toggle > 0 ) ? state_on : state_off);
         cli.publish( &cli, &publish_params);
       }
     }
@@ -821,14 +839,14 @@ int main(int argc, char** argv) {
         cli.get_pkt_length(&cli, &packet, &length);
 
         if( recv_buf_off >= length) {
-          memcpy( buffer->value, recv_buf, length);
+          memcpy( data->value, recv_buf, length);
           memmove( recv_buf, recv_buf+length, recv_buf_off - length);
           recv_buf_off -= length;
           recv_buf_len += length;
 
           if(ctx.verbose) {
             memset(log_str, 0x00, log_str_len);
-            format_data(buffer->value, length, log_str, log_str_len);
+            format_data(data->value, length, log_str, log_str_len);
             log_str[1] = '=';
             log_str[2] = '>';
             printf("%s\r\n", log_str);
@@ -836,8 +854,8 @@ int main(int argc, char** argv) {
 
           channel.ip_address = srv_ip;
           channel.user_id = 0;
-          buffer->length = length;
-          result = process_and_send_data(sock, &cli, buffer, &channel, log_str, log_str_len);
+          data->length = length;
+          result = process_and_send_data(sock, &cli, data, &channel, log_str, log_str_len);
           if(result == RESULT_FAILURE) {
             TOLOG(LOG_ERR, "Sending failed");
             break;
@@ -847,19 +865,27 @@ int main(int argc, char** argv) {
             break;
           }
         }
-
         break;
       } /* Receive and process */
 	  }
-
+    tv.tv_sec = 0;
+    tv.tv_usec = 200;
+    select(0, NULL, NULL, NULL, &tv);
   } /* while loop */
 
   /* Exit the program */
-  printf("\r\nStopped!\r\n");
-  rc = RC_SUCCESS;
-
 finish:
-  /* Close the socket if necessary */
+  if(ctx.verbose) {
+    printf("Thread with id %lu was stopped.\r\n", pthread_self());
+  }
+  /* Deallocating resources (if any) */
+  if( NULL != data) {
+    if(NULL != data->value) {
+      free( data->value );
+    }
+    free( data );
+    data = NULL;
+  }
   if(sock) {
     close( sock );
   }
@@ -869,16 +895,64 @@ finish:
   if(NULL != recv_buf) {
     free( recv_buf );
   }
-  if( NULL != buffer) {
-    if(NULL != buffer->value) {
-      free( buffer->value );
-    }
-    free( buffer );
-    buffer = NULL;
-  }
-  /* Destroy client */
   if( NULL != cli.ctx) {
     mqtt_cli_destr( &cli );
   }
+  return ((void*) result);
+}
+
+int main(int argc, char** argv) {
+  pthread_t thread = 0;
+  int result;
+  struct sigaction sa;
+  struct itimerval timer;
+
+  /* Validate arguments */
+  if(validate_args(argc, argv)) {
+    usage(argv[0]);
+    result = RESULT_FAILURE;
+    goto finish;
+  }
+
+  show_info();
+
+  state = STATE_STARTED;
+
+  /* Configure signal_handler as the signal handler for SIGALRM */
+  memset (&sa, 0, sizeof (sa));
+  sa.sa_handler = &signal_handler;
+  sigaction (SIGALRM, &sa, NULL);
+
+  /* Configure signal handler to stop the program on Ctrl+C pressed */
+  sigaction(SIGINT, &sa, NULL);
+
+	/* Configure the timer to expire after n sec... */
+	timer.it_value.tv_sec = 1;
+	timer.it_value.tv_usec = 0;
+
+	/* ... and every n sec after that. */
+	timer.it_interval.tv_sec = 1;
+	timer.it_interval.tv_usec = 0;
+
+  pthread_mutex_init(&mutex, NULL);
+  result = pthread_create(&thread, NULL, thread_func, ctx.uniqueid);
+  if(result != 0) {
+    perror("pthread_create");
+    goto finish;
+  }
+
+	/* Start a real timer. It counts down whenever this process is
+	   executing. */
+	setitimer (ITIMER_REAL, &timer, NULL);
+
+  if(ctx.verbose) {
+    printf("Press Ctrl+c to stop\r\n");
+  }
+
+finish:
+  if(0 != thread) {
+    pthread_join(thread, NULL);
+  }
+  pthread_mutex_destroy(&mutex);
   return result;
 }

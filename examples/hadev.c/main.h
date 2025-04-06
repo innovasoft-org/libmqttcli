@@ -92,10 +92,6 @@ typedef struct program_ctx {
   char password[MAX_PASSWORD_LEN+1];
   /** Verbose */
   uint8_t verbose;
-  /** Stores program state */
-  uint8_t state;
-  /** Stores timer interrupt status */
-  uint8_t timer_int;
   /** Stores MQTT protocol's version */
   uint8_t mqtt_version;
   /** Stores unique-id of the device */
