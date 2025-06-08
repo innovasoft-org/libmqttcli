@@ -269,24 +269,7 @@ struct mqtt_cli {
      */
     void     (*is_connected) (const mqtt_cli_t *self, uint8_t *is_connected);
     /**
-     * @brief Obtains the total packet length.
-     * 
-     * @param self pointer to the private context data
-     * @param packet pointer to the packet data for which the length will be calculated
-     * @param length pointer to calculated length of the packet
-     */
-    void     (*get_pkt_length) (const mqtt_cli_t *self, lv_t *packet, size_t *length);
-    /** 
-     * @brief Obtains MQTT this library version.
-     * 
-     * @param self pointer to the private context data
-     * @param version pointer to the 32-bit value representing the version
-     * 
-     * @note The obtained version has a format: a.b.c.d
-     */
-    void     (*get_lib_version) (const mqtt_cli_t *self, uint32_t *version);
-    /** 
-     * @brief Obtains the last packet type which was prepared.
+          * @brief Obtains the last packet type which was prepared.
      * 
      * @param self pointer to the private context data
      * @param last_pkt pointer to the 8-bit value representing last prepared packet type.
@@ -339,6 +322,16 @@ struct mqtt_cli {
      * @note Default value is NULL.
      */
     void     (*set_cb_suback) (const mqtt_cli_t *self, cb_mqtt_suback_t cb_mqtt_suback);
+    /** 
+     * @brief Sets callback on packet UNSUBACK received.
+     * 
+     * @param self pointer to the private context data
+     * @param cb_mqtt_suback function pointer
+     * 
+     * @note This value is optional.
+     * @note Default value is NULL.
+     */
+    void     (*set_cb_unsuback) (const mqtt_cli_t *self, cb_mqtt_unsuback_t cb_mqtt_unsuback);
     /** 
      * @brief Sets callback on packet CONNACK received.
      * 
@@ -395,6 +388,21 @@ uint16_t __ATTR mqtt_cli_init(mqtt_cli_t *obj);
  * @param obj pointer to the private context data
  */
 void     __ATTR mqtt_cli_destr(mqtt_cli_t *obj);
+/**
+ * @brief Obtains the total packet length.
+ *
+ * @param packet pointer to the packet data for which the length will be calculated
+ * @param length pointer to calculated length of the packet
+ */
+void     __ATTR mqtt_get_pkt_length (lv_t *packet, size_t *length);
+/**
+ * @brief Obtains MQTT CLIENT library version.
+ *
+ * @param version pointer to the 32-bit value representing the version
+ *
+ * @note The obtained version has a format: a.b.c.d
+ */
+void     __ATTR mqtt_cli_get_lib_version(uint32_t *version);
 
 #ifdef __cplusplus
 }

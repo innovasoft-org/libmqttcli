@@ -14,6 +14,8 @@
 #include <stdarg.h> /* va_start, va_arg_, va_end */
 #include <time.h> /* time() */
 #include <signal.h> /* sigaction() ... */
+#include <pthread.h>
+#include <stdio.h>
 
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
@@ -27,8 +29,20 @@
 #include "utils.h"
 #include "../../api/mqtt_cli.h"
 
+#define STATE_STOPPED     ( (uint8_t) 0 )
+#define STATE_STARTED     ( (uint8_t) 1 )
+#define STATE_DISCOVERY   ( (uint8_t) 1 )
+#define STATE_SYNCHRO     ( (uint8_t) 2 )
+#define STATE_OPERATIONAL ( (uint8_t) 3 )
+
 /** Program context */
 static context_t ctx;
+
+static int timer_int;
+
+static uint8_t state = STATE_STOPPED;
+
+static pthread_mutex_t mutex;
 
 static struct option long_options[] = {
   {L_OPT_BUFFER_SIZE, required_argument,  0,  S_OPT_BUFFER_SIZE},
@@ -40,6 +54,7 @@ static struct option long_options[] = {
   {L_OPT_KEY,         required_argument,  0,  S_OPT_KEY},
   {L_OPT_MESSAGE,     required_argument,  0,  S_OPT_MESSAGE},
   {L_OPT_MQTT_VERSION,required_argument,  0,  S_OPT_MQTT_VERSION},
+  {L_OPT_OPTIONS,     required_argument,  0,  S_OPT_OPTIONS},
   {L_OPT_PASSWORD,    required_argument,  0,  S_OPT_PASSWORD},
   {L_OPT_PORT,        required_argument,  0,  S_OPT_PORT},
   {L_OPT_PUBLISH,     no_argument,        0,  S_OPT_PUBLISH},
@@ -85,12 +100,13 @@ int validate_args(int argc, char **argv) {
   }
 
   while( 1 ) {
-    c = getopt_long( argc, argv,"vh:p:b:t:m:I:N:P:", long_options, &idx );
+    // NOTE: If such a character is followed by a colon, the option requires an argument,
+    c = getopt_long( argc, argv,"vh:p:b:t:m:I:N:P:o:", long_options, &idx );
     /* Detect the end of the options */
     if( c == -1) {
       break;
     }
-    switch(c) {
+    switch( c ) {
       case S_OPT_BUFFER_SIZE:
         ctx.buffer_size = atoi( optarg );
         break;
@@ -139,6 +155,9 @@ int validate_args(int argc, char **argv) {
       case S_OPT_MQTT_VERSION:
         ctx.mqtt_version = atoi( optarg );
         break;
+      case S_OPT_OPTIONS:
+        ctx.options = atoi( optarg );
+        break;
       case S_OPT_PASSWORD:
         length = strlen( optarg );
         if(length > sizeof(ctx.password) / sizeof(char) ) {
@@ -155,20 +174,12 @@ int validate_args(int argc, char **argv) {
         ctx.port = atoi( optarg );
         break;
       case S_OPT_PUBLISH:
-        if(ctx.subscribe == 1 || ctx.publish == 1) {
-          TOLOG(LOG_ERR, "Invalid combination - subscribe and publish");
-          return RESULT_FAILURE;
-        }
         ctx.publish = 1;
         break;
       case S_OPT_REUSE_ADDR:
         ctx.optval_reuse_addr = 1;
         break;
       case S_OPT_SUBSCRIBE:
-        if(ctx.subscribe == 1 || ctx.publish == 1) {
-          TOLOG(LOG_ERR, "Invalid combination - subscribe and publish");
-          return RESULT_FAILURE;
-        }
         ctx.subscribe = 1;
         break;
       case S_OPT_TOPIC:
@@ -206,12 +217,17 @@ int validate_args(int argc, char **argv) {
     }
   }
 
+  if(ctx.publish && ctx.subscribe) {
+    TOLOG(LOG_ERR, "publish and subscribe options are not allowed within one command");
+    return RESULT_FAILURE;
+  }
+
   if(ctx.mqtt_version != 4 && ctx.mqtt_version != 5) {
     TOLOG(LOG_ERR, "invalid MQTT version");
     return RESULT_FAILURE;    
   }
 
-  if(ctx.publish && ( !ctx.topic[0] || !ctx.message[0] ) ) {
+  if(ctx.publish && !ctx.topic[0]) {
     TOLOG(LOG_ERR, "publish option requires to specify topic and message");
     return RESULT_FAILURE;
   }
@@ -223,6 +239,11 @@ int validate_args(int argc, char **argv) {
 
   if(ctx.subscribe && ctx.flags != 0 ) {
     TOLOG(LOG_ERR, "subscribe option does not accept 'flags' parameter");
+    return RESULT_FAILURE;
+  }
+
+  if(ctx.publish && ctx.options != 0 ) {
+    TOLOG(LOG_ERR, "publish option does not accept 'options' parameter");
     return RESULT_FAILURE;
   }
 
@@ -238,11 +259,15 @@ void signal_handler(int sig)
 	switch(sig)
 	{
 		case SIGALRM:
-			ctx.timer_int = 1;
+      pthread_mutex_lock(&mutex);
+			timer_int = 1;
+      pthread_mutex_unlock(&mutex);
 			break;
 		case SIGINT:
 		case SIGTERM:
-			ctx.state = 0;
+      pthread_mutex_lock(&mutex);
+			state = STATE_STOPPED;
+      pthread_mutex_unlock(&mutex);
 			break;
 		case SIGHUP:
 			TOLOG(LOG_WARNING,"Received SIGHUP signal.");
@@ -267,11 +292,12 @@ void usage(const char* program) {
   printf(" --%s <file>\r\n\t%s\r\n",                                          L_OPT_CAFILE,        "Sets a path to the file of CA certificates in PEM format.");
   printf(" --%s <dir>\r\n\t%s\r\n",                                           L_OPT_CAPATH,        "Sets a directory containing CA certificates in PEM format.");
   printf(" --%s <file>\r\n\t%s\r\n",                                          L_OPT_CERT,          "Sets a user's certificate in PEM format");
-  printf(" --%s\r\n\t%s\r\n",                                                 L_OPT_FLAGS,         "Sets the MQTT Publish packet Fixed Header flags. Default: `00`.");
+  printf(" --%s <number>\r\n\t%s\r\n",                                        L_OPT_FLAGS,         "Sets the MQTT Publish packet Fixed Header flags. Default: `0`.");
   printf(" -%c <host_name>, --%s <host_name>\r\n\t%s\r\n", S_OPT_HOST,        L_OPT_HOST,          "Sets remote host name or IP address.");
   printf(" --%s <dir>\r\n\t%s\r\n",                                           L_OPT_KEY,           "Sets a user's certificate private key in PEM format");
   printf(" -%c <message>, --%s <message>\r\n\t%s\r\n",     S_OPT_MESSAGE,     L_OPT_MESSAGE,       "Sets the message used only during PUBLISH packet creation.");
-  printf(" --%s <version>\r\n\t%s\r\n",                                       L_OPT_MQTT_VERSION,  "Sets MQTT protocol's version (4 or 5). Default: 5.");
+  printf(" --%s <number>\r\n\t%s\r\n",                                        L_OPT_MQTT_VERSION,  "Sets MQTT protocol's version (4 or 5). Default: 5.");
+  printf(" -%c <number>, --%s <number>\r\n\t%s\r\n",       S_OPT_OPTIONS,     L_OPT_OPTIONS,       "Sets options used with SUBSCRIBE packet. Default: '0'.");
   printf(" -%c <password>, --%s <password>\r\n\t%s\r\n",   S_OPT_PASSWORD,    L_OPT_PASSWORD,      "Sets password used during CONNECT packet creation.");
   printf(" -%c <port>, --%s <port>\r\n\t%s\r\n",           S_OPT_PORT,        L_OPT_PORT,          "Sets the remote port to be used. Default: 1884.");
   printf(" --%s\r\n\t%s\r\n",                                                 L_OPT_PUB,           "Runs the program to publish the packet.");
@@ -284,7 +310,6 @@ void usage(const char* program) {
   printf(" -%c <user_name>, --%s <user_name>\r\n\t%s\r\n", S_OPT_USERNAME,    L_OPT_USERNAME,      "Sets user_name used during CONNECT packet creation.");
   printf(" -%c, --%s\r\n\t%s\r\n",                         S_OPT_VERBOSE,     L_OPT_VERBOSE,       "Runs the program in verbose mode.");
 
-
 	printf("\r\n");
 }
 
@@ -295,9 +320,9 @@ void show_info() {
 
   printf("MQTT client (c) 2024\r\n");
   printf("\r\n");
-  printf("         IP: %s\r\n", ctx.ip);
-  printf("       Port: %d\r\n", ctx.port);
-  printf("        TLS: %s\r\n", (ctx.tls) ? "enabled" : "disabled" );
+  printf("Host: %s\r\n", ctx.ip);
+  printf("Port: %d\r\n", ctx.port);
+  printf(" TLS: %s\r\n", (ctx.tls) ? "enabled" : "disabled" );
 }
 
 void log_write(int level, char* filename, int line, char *fmt,...) {
@@ -497,7 +522,7 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
   }
   
   if(ctx.subscribe == 1) {
-    subscribe_params.filter = (mqtt_subscribe_filter_t) {.length=strlen(ctx.topic), .options=1, .value=ctx.topic, };
+    subscribe_params.filter = (mqtt_subscribe_filter_t) {.length=strlen(ctx.topic), .options=ctx.options, .value=ctx.topic, };
     subscribe_params.properties = (lv_t) {.length=0, .value=NULL };
     if( MQTT_SUCCESS != (rc = self->subscribe(self, &subscribe_params))) {
       TOLOG(LOG_CRIT, "subscribe() failed, rc = %d", rc);
@@ -505,6 +530,12 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
   }
 
   return RC_SUCCESS;
+}
+
+void cb_puback(const mqtt_cli_ctx_cb_t *self, const mqtt_puback_t *pkt, const mqtt_channel_t *channel) {
+  pthread_mutex_lock(&mutex);
+	state = STATE_STOPPED;
+  pthread_mutex_unlock(&mutex);
 }
 
 mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
@@ -550,14 +581,18 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
   return RC_SUCCESS;
 }
 
-int main(int argc, char** argv) {
-  uint8_t *send_buf = NULL, *recv_buf = NULL;
+void cb_suback(const mqtt_cli_ctx_cb_t *self, const mqtt_suback_t *pkt, const mqtt_channel_t *channel) {
+  ctx.subscribe = 2;
+}
+
+void* thread_func(void* arg) {
+  uint8_t *send_buf = NULL, *recv_buf = NULL, last_pkt, current_state, current_timer_int;
   uint16_t rc;
-  uint32_t srv_ip;
+  uint32_t srv_ip, version;
   size_t length, recv_buf_len, recv_buf_off, send_buf_len, i;
   ssize_t recv_len;
   char *log_str = NULL, c;
-  int result, optval, ret, log_str_len, sock = 0;
+  int *result, optval, ret, log_str_len, sock = 0;
   struct sigaction sa;
   struct sockaddr_in server;
   struct hostent *host = NULL;
@@ -565,7 +600,6 @@ int main(int argc, char** argv) {
   struct timeval tv;
   mqtt_cli_t cli;
   mqtt_channel_t channel;
-  struct itimerval timer;
   time_t now;
   lv_t packet, cli_userid, cli_username, cli_password;
   mqtt_publish_params_t publish_params;
@@ -577,28 +611,26 @@ int main(int argc, char** argv) {
   BIO *bio = NULL;
   long ssl_result;
 
-  /* Initialize */
-  memset( &cli, 0x00, sizeof(cli));
-
-  /* Validate arguments */
-  if(validate_args(argc, argv)) {
-    usage(argv[0]);
-    result = RESULT_FAILURE;
-    goto finish;
+  if( NULL == (result = malloc( sizeof(int) * 1))) {
+    pthread_exit( NULL );
   }
 
-  show_info();
+  result[0] = RESULT_OK;
+
+  if(ctx.verbose) {
+    printf("Thread with id %lu was started.\r\n", pthread_self());
+  }
 
   if( NULL == (send_buf = (unsigned char*) malloc (ctx.buffer_size ))) {
     TOLOG(LOG_CRIT, "Not enough memory");
-    result = RESULT_FAILURE;
+    result[0] = RESULT_FAILURE;
     goto finish;
   }
   send_buf_len = ctx.buffer_size;
 
   if( NULL == (recv_buf = (unsigned char*) malloc (ctx.buffer_size ))) {
     TOLOG(LOG_CRIT, "Not enough memory");
-    result = RESULT_FAILURE;
+    result[0] = RESULT_FAILURE;
     goto finish;
   }
   recv_buf_len = ctx.buffer_size;
@@ -606,32 +638,24 @@ int main(int argc, char** argv) {
   log_str_len = 2*ctx.buffer_size + ctx.buffer_size;
   if( NULL == (log_str = (unsigned char*) malloc ( log_str_len ))) {
     TOLOG(LOG_CRIT, "Not enough memory");
-    result = RESULT_FAILURE;
+    result[0] = RESULT_FAILURE;
     goto finish;
   }
 
   clv_t data = {.capacity=send_buf_len, .value=send_buf};
-
-  /* Configure signal_handler as the signal handler for SIGALRM */
-  memset (&sa, 0, sizeof (sa));
-  sa.sa_handler = &signal_handler;
-  sigaction (SIGALRM, &sa, NULL);
-
-  /* Configure signal handler to stop the program on Ctrl+C pressed */
-  sigaction(SIGINT, &sa, NULL);
 
   /* Initialize OpenSSL (if any) */
   if(ctx.tls) {
     /* We want an SSL_CTX for creating clients so we use TLS_client_method() here */
     if( NULL == (method = TLS_client_method())) {
       TOLOG(LOG_CRIT, "TLS_client_method() failed");
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;          
     }
     /* Create an SSL_CTX which we can use to create SSL objects from */
     if ( NULL == (ssl_ctx = SSL_CTX_new(method))) {
       TOLOG(LOG_CRIT, "Unable to create a new SSL context structure");
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;      
     }
     /* Configure the client to abort the handshake if certificate verification fails. 
@@ -641,32 +665,32 @@ int main(int argc, char** argv) {
     printf("%s\r\n", ctx.cafile);
     if( !SSL_CTX_load_verify_locations(ssl_ctx, ctx.cafile, ctx.capath)) {
       TOLOG(LOG_CRIT, "SSL_CTX_load_verify_locations() failed");
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;
     }
     /* Set user's certificate */
     if( NULL != ctx.cert && !SSL_CTX_use_certificate_file(ssl_ctx, ctx.cert, SSL_FILETYPE_PEM)) {
       TOLOG(LOG_CRIT, "SSL_CTX_use_certificate_file() failed");
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;        
     }
     /* Set user's certificate private key */
     if( NULL != ctx.key && !SSL_CTX_use_PrivateKey_file(ssl_ctx, ctx.key, SSL_FILETYPE_PEM)) {
       TOLOG(LOG_CRIT, "SSL_CTX_use_PrivateKey_file() failed");
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;        
     }
     /* TLSv1.1 or earlier are deprecated by IETF and are generally to be
        avoided if possible. We require a minimum TLS version of TLSv1.2. */
     if (!SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_2_VERSION)) {
       TOLOG(LOG_CRIT, "Failed to set the minimum TLS protocol version");
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;    
     }
     /* Create an SSL object to represent the TLS connection */
     if ( NULL == (ssl = SSL_new(ssl_ctx))) {
       TOLOG(LOG_CRIT, "Failed to create the SSL object");
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;    
     }
   }
@@ -674,7 +698,7 @@ int main(int argc, char** argv) {
   /* Create the TCP/IP socket */
 	if( -1 == (sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))) {
 		TOLOG(LOG_CRIT, "socket(AF_INET, SOCK_STREAM, IPPROTO_TCP), errno = %d", errno);
-		result = RESULT_FAILURE;
+		result[0] = RESULT_FAILURE;
     goto finish;
 	}
 
@@ -688,7 +712,7 @@ int main(int argc, char** argv) {
     host = gethostbyname( ctx.ip );
     if(host == NULL) {
       TOLOG(LOG_ERR, "Server name resolving was impossible, errno = %d", errno);
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;
     }
     memcpy( &server.sin_addr, host->h_addr_list[0], host->h_length );
@@ -711,14 +735,15 @@ int main(int argc, char** argv) {
   	/* Enable to reuse address */
     if( -1 == setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &ctx.optval_reuse_addr, sizeof(ctx.optval_reuse_addr))) {
       TOLOG(LOG_ERR,"setsockopt(...,SOL_SOCKET,SO_REUSEADDR,...), errno = %d", errno);
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;
     }
   }
 
   /* Initializing MQTT client */
   if(ctx.verbose) {
-    printf("Initializing MQTT client...");
+    mqtt_cli_get_lib_version( &version );
+    printf("Initializing MQTT client (v%08x)...", version);
   }
   mqtt_params.bufsize = ctx.buffer_size;
   mqtt_params.timeout = 1;
@@ -727,7 +752,7 @@ int main(int argc, char** argv) {
   mqtt_params.max_pkt_id = 8;
   if( MQTT_SUCCESS != (rc = mqtt_cli_init_ex( &cli, &mqtt_params )) ) {
     TOLOG(LOG_ERR,"mqtt_cli_init_ex( ... ), rc = %d", rc);
-    result = RESULT_FAILURE;
+    result[0] = RESULT_FAILURE;
     goto finish;    
   }
   if(ctx.verbose) {
@@ -740,8 +765,10 @@ int main(int argc, char** argv) {
   }
   if( !ctx.verbose && ctx.subscribe ) {
     cli.set_cb_publish( &cli, cb_publish );
+    cli.set_cb_suback( &cli, cb_suback);
   }
   cli.set_cb_connack( &cli, cb_connack );
+  cli.set_cb_puback( &cli, cb_puback );
   cli.set_br_ip( &cli, srv_ip);
   cli.set_br_keepalive( &cli, (uint16_t) 10);
   if(ctx.userid[0] == 0) {
@@ -753,21 +780,21 @@ int main(int argc, char** argv) {
   cli_userid.value = ctx.userid;
   if( MQTT_SUCCESS != (rc = cli.set_br_userid( &cli, &cli_userid )) ) {
     TOLOG(LOG_ERR,"cli.set_br_userid( ... ), rc = %d", rc);
-    result = RESULT_FAILURE;
+    result[0] = RESULT_FAILURE;
     goto finish;
   }
   cli_username.length = strlen (ctx.username);
   cli_username.value = ctx.username;
   if( cli_username.length && MQTT_SUCCESS != (rc = cli.set_br_username( &cli, &cli_username )) ) {
     TOLOG(LOG_ERR,"cli.set_br_username( ... ), rc = %d", rc);
-    result = RESULT_FAILURE;
+    result[0] = RESULT_FAILURE;
     goto finish;   
   }
   cli_password.length = strlen(ctx.password);
   cli_password.value = ctx.password;
   if( cli_password.length && MQTT_SUCCESS != (rc = cli.set_br_password( &cli, &cli_password )) ) {
     TOLOG(LOG_ERR,"cli.set_br_password( ... ), rc = %d", rc);
-    result = RESULT_FAILURE;
+    result[0] = RESULT_FAILURE;
     goto finish;   
   }
   if(ctx.verbose) {
@@ -780,20 +807,20 @@ int main(int argc, char** argv) {
   }
   if( -1 == connect(sock, (struct sockaddr*)&server, sizeof(server) ) ) {
     TOLOG(LOG_ERR,"connect( ... ), errno = %d", errno);
-    result = RESULT_FAILURE;
+    result[0] = RESULT_FAILURE;
     goto finish;
   }
   /* Start non-blocking mode */
   if( -1 == ioctl(sock, FIONBIO, (char*) &ctx.non_blocking) ) {
     TOLOG(LOG_ERR,"ioctl(sock, FIONBIO, ... ), errno = %d", errno);
-    result = RESULT_FAILURE;
+    result[0] = RESULT_FAILURE;
     goto finish;
   }  
   if(ctx.tls) {
     /* Create a BIO to wrap the socket */
     if ( NULL == (bio = BIO_new(BIO_s_socket())) ) {
       TOLOG(LOG_ERR,"BIO_new() failed");
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;  
     }
     /*
@@ -812,7 +839,7 @@ int main(int argc, char** argv) {
     */
     if (!SSL_set_tlsext_host_name(ssl, ctx.ip)) {
       TOLOG(LOG_ERR,"Failed to set the SNI hostname");
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;  
     }
     /*
@@ -823,27 +850,27 @@ int main(int argc, char** argv) {
     */
     if (!SSL_set1_host(ssl, ctx.ip)) {
       TOLOG(LOG_ERR,"Failed to set the certificate verification hostname");
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;  
     }
 
     /* Do the handshake with the server */
-    while ((result = SSL_connect(ssl)) != 1) {
+    while ((result[0] = SSL_connect(ssl)) != 1) {
       FD_ZERO(&fds);
       FD_SET(sock, &fds);
 
-      if (SSL_ERROR_WANT_WRITE == result) {
+      if (SSL_ERROR_WANT_WRITE == result[0]) {
         select(sock + 1, NULL, &fds, NULL, NULL);
         continue;
       }
-      else if (SSL_ERROR_WANT_READ == result) {
+      else if (SSL_ERROR_WANT_READ == result[0]) {
         select(sock + 1, &fds, NULL, NULL, NULL);
         continue;
       }
       else if(EAGAIN == errno || EWOULDBLOCK == errno) {
         continue;
       }
-      TOLOG(LOG_ERR,"Could not build a SSL session, result %d", result);
+      TOLOG(LOG_ERR,"Could not build a SSL session, result %d", result[0]);
       /*
       * If the failure is due to a verification error we can get more
       * information about it from SSL_get_verify_result().
@@ -852,7 +879,7 @@ int main(int argc, char** argv) {
       if ( X509_V_OK != ssl_result) {
         TOLOG(LOG_ERR,"Verify error: %s", X509_verify_cert_error_string( ssl_result ));
       }
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;      
     }
   }
@@ -861,48 +888,45 @@ int main(int argc, char** argv) {
     printf("OK\r\n");
   }
 
-	/* Configure the timer to expire after n sec... */
-	timer.it_value.tv_sec = ctx.timeout;
-	timer.it_value.tv_usec = 0;
-
-	/* ... and every n sec after that. */
-	timer.it_interval.tv_sec = ctx.timeout;
-	timer.it_interval.tv_usec = 0;
-
-	/* Start a real timer. It counts down whenever this process is
-	   executing. */
-	setitimer (ITIMER_REAL, &timer, NULL);
-
-  if(ctx.verbose) {
-    printf("Press Ctrl+c to stop\r\n");
-  }
-
-  ctx.state = 1;
 	tv.tv_sec = 0;
 	tv.tv_usec = 0;
   recv_buf_off = 0;
-  while( ctx.state ) {
+  while( 1 ) {  
+    pthread_mutex_lock(&mutex);
+    current_state = state;
+    current_timer_int = timer_int;
+    timer_int = 0;
+    pthread_mutex_unlock(&mutex);
+
+    if( STATE_STOPPED == current_state ) {
+      break;
+    }
+
     /* Printing received and saved topic and message (if any) */
-    if( ctx.subscribe == 2 && ctx.topic[0] && ctx.message[0]) {
-      printf("%s: %s\r\n", ctx.topic, ctx.message);
+    if( ctx.subscribe == 2 && ctx.topic[0]) {
+      printf("%s: %s\r\n\r\n", ctx.topic, ctx.message);
       ctx.topic[0] = 0;
       ctx.message[0] = 0;
     }
     /* Processing timeout (if any) */
-    if(ctx.timer_int) {
-      ctx.timer_int = 0;
+    if( current_timer_int ) {
+      timer_int = 0;
       channel.ip_address = 0;
       channel.user_id = 0;
       data.length = 0;
-      result = process_and_send_data(sock, ssl, &cli, &data, &channel, log_str, log_str_len);
-      if(result == RESULT_FAILURE) {
+      result[0] = process_and_send_data(sock, ssl, &cli, &data, &channel, log_str, log_str_len);
+      if(result[0] == RESULT_FAILURE) {
         TOLOG(LOG_ERR, "Sending failed");
         break;
       }
-      else if(result == RESULT_EXIT) {
+      else if(result[0] == RESULT_EXIT) {
         TOLOG(LOG_ERR, "Connection closed");
         break;
-      }    
+      }
+      cli.get_last_pkt(&cli, &last_pkt);
+      if( (PTYPE_PUBLISH == last_pkt) && ((ctx.flags & 0x02) == 0x00) ) {
+        current_state = STATE_STOPPED;
+      }
     }
     if(ssl != NULL) {
       sock = SSL_get_fd(ssl);
@@ -912,16 +936,16 @@ int main(int argc, char** argv) {
     /* Set read notification for the socket */
     FD_SET(sock, &fds);
 	  /* Wait until the socket has data ready to be read (until timeout occurs) */
-	  if( -1 == (result = select( sock+1, &fds, NULL, NULL, &tv)) ) {
+	  if( -1 == (result[0] = select( sock+1, &fds, NULL, NULL, &tv)) ) {
       if(EINTR == errno ) {
         continue;
       }
 		  TOLOG(LOG_ERR,"select( ... ), errno = %d", errno);
-      result = RESULT_FAILURE;
+      result[0] = RESULT_FAILURE;
       goto finish;
 	  }
     /* Check if timeout has occurred */
-    if( result == 0 ) {
+    if( result[0] == 0 ) {
       /* do nothing */
       ;
     }
@@ -981,7 +1005,7 @@ int main(int argc, char** argv) {
 
         packet.length = recv_buf_off;
         packet.value = recv_buf;
-        cli.get_pkt_length(&cli, &packet, &length);
+        mqtt_get_pkt_length(&packet, &length);
 
         if( recv_buf_off >= length) {
           memcpy( send_buf, recv_buf, length);
@@ -1000,14 +1024,18 @@ int main(int argc, char** argv) {
           channel.ip_address = srv_ip;
           channel.user_id = 0;
           data.length = length;
-          result = process_and_send_data(sock, ssl, &cli, &data, &channel, log_str, log_str_len);
-          if(result == RESULT_FAILURE) {
+          result[0] = process_and_send_data(sock, ssl, &cli, &data, &channel, log_str, log_str_len);
+          if(result[0] == RESULT_FAILURE) {
             TOLOG(LOG_ERR, "Sending failed");
             break;
           }
-          else if(result == RESULT_EXIT) {
+          else if(result[0] == RESULT_EXIT) {
             TOLOG(LOG_ERR, "Connection closed");
             break;
+          }
+          cli.get_last_pkt(&cli, &last_pkt);
+          if( (PTYPE_PUBLISH == last_pkt) && ((ctx.flags & 0x02) == 0x00) ) {
+            current_state = STATE_STOPPED;
           }
         }
 
@@ -1015,13 +1043,16 @@ int main(int argc, char** argv) {
       } /* Receive and process */
 	  }
 
+    if( STATE_STOPPED == current_state ) {
+      break;
+    }
+
   } /* while loop */
 
-  /* Exit the program */
-  printf("\r\nStopped!\r\n");
-  result = RESULT_OK;
-
 finish:
+  if(ctx.verbose) {
+    printf("Thread with id %lu was stopped.\r\n", pthread_self());
+  }
   /* Close the socket if necessary */
   if( 0 < sock) {
     close( sock );
@@ -1059,5 +1090,79 @@ finish:
   if( NULL != cli.ctx ) {
     mqtt_cli_destr( &cli );
   }
+  return result;
+}
+
+int main(int argc, char** argv) {
+  pthread_t thread = 0;
+  int *thread_result, result;
+  struct sigaction sa;
+  struct itimerval timer;
+
+  /* Validate arguments */
+  if(validate_args(argc, argv)) {
+    usage(argv[0]);
+    result = RESULT_FAILURE;
+    goto finish;
+  }
+
+  show_info();
+
+  state = STATE_STARTED;
+
+  /* Configure signal_handler as the signal handler for SIGALRM */
+  memset (&sa, 0, sizeof (sa));
+  sa.sa_handler = &signal_handler;
+  sigaction (SIGALRM, &sa, NULL);
+
+  /* Configure signal handler to stop the program on Ctrl+C pressed */
+  sigaction(SIGINT, &sa, NULL);
+
+	/* Configure the timer to expire after n sec... */
+	timer.it_value.tv_sec = 1;
+	timer.it_value.tv_usec = 0;
+
+	/* ... and every n sec after that. */
+	timer.it_interval.tv_sec = 1;
+	timer.it_interval.tv_usec = 0;
+
+  pthread_mutex_init(&mutex, NULL);
+  result = pthread_create(&thread, NULL, thread_func, NULL);
+  if(0 != result) {
+    if(ctx.verbose) {
+      perror("pthread_create\r\n");
+    }
+    goto finish;
+  }
+
+	/* Start a real timer. It counts down whenever this process is
+	   executing. */
+	setitimer (ITIMER_REAL, &timer, NULL);
+
+  if(ctx.verbose) {
+    printf("Press Ctrl+c to stop\r\n");
+  }
+
+finish:
+  if(0 != thread) {
+    pthread_join(thread, (void*) &thread_result);
+    if(NULL != thread_result) {
+      if(thread_result[0] == RESULT_OK && ctx.verbose) {
+        printf("Thread finished successfully.\r\n");
+        result = RESULT_OK;
+      }
+      else if(ctx.verbose) {
+        printf("Thread finished with failure.\r\n");
+        result = RESULT_FAILURE;
+      }
+      free( thread_result );
+      thread_result = NULL;
+    }
+    else if(ctx.verbose) {
+      printf("Thread result is NULL.\r\n");
+      result = RESULT_FAILURE;
+    }
+  }
+  pthread_mutex_destroy(&mutex);
   return result;
 }

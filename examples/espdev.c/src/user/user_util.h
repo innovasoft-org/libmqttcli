@@ -18,6 +18,15 @@
   ((((x) & 0xff000000u) >> 24) | (((x) & 0x00ff0000u) >> 8)	\
    | (((x) & 0x0000ff00u) << 8) | (((x) & 0x000000ffu) << 24))
 
+#define ATOI(VALUE, BUF, OFFSET, LENGTH)                         \
+  {                                                              \
+    VALUE=0;                                                     \
+    while( ISDIGIT( BUF[OFFSET] ) && LENGTH > OFFSET ) {         \
+      VALUE = VALUE * 10 + (uint32_t) ( BUF[OFFSET++] - 0x30 );  \
+    }                                                            \
+  }
+  
+
 uint16_t htons (uint16_t x);
 
 #endif /* #define __USER_UTIL_H__*/

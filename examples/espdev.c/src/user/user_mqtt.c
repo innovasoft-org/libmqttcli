@@ -31,12 +31,16 @@ const uint8_t GPIO12[] = "gpio12";
 const uint8_t GPIO13[] = "gpio13";
 const uint8_t GPIO14[] = "gpio14";
 const uint8_t GPIO15[] = "gpio15";
+const uint8_t STATUS_TOPIC[] = "homeassistant/status";
 
-uint8_t mqtt_suback = 0;
+#define STATE_DISCONNECTED    ( (uint8_t) 1 )
+#define STATE_CONNECTED       ( (uint8_t) 2 )
+#define STATE_AVAILABLE       ( (uint8_t) 3 )
+#define STATE_UNSYNCHRONIZED  ( (uint8_t) 4 )
+#define STATE_OPERATIONAL     ( (uint8_t) 5 )
 
-uint8_t mqtt_counter = 0;
 /** Determines if there is pending data to send */
-uint8_t pending_data = 0;
+uint8_t pending_data, idle_counter, state;
 /** Internal mqtt timer used to determine idle state */
 os_timer_t mqtt_idle_timer;
 /** Event queue */
@@ -48,44 +52,28 @@ clv_t data = { .capacity=sizeof(big_buffer)/sizeof(big_buffer[0]), .value=big_bu
 
 static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e);
 
-void ICACHE_FLASH_ATTR mqtt_restart_cb (void *arg) {
-  /* Disarm timers */
-  os_timer_disarm(&mqtt_idle_timer);
-
-  TOLOG(LOG_DEBUG, "mqtt_restart_cb()");
-
-  /* Restart the system */
-  system_restart();
+void ICACHE_FLASH_ATTR matt_reconnect_cb(void *arg)  {
+  matt_reconnect_ex_cb(arg, 0);
 }
 
-void ICACHE_FLASH_ATTR mqtt_disconnect_cb(void *arg) {
+void ICACHE_FLASH_ATTR matt_reconnect_ex_cb(void *arg, sint8 err)  {
   /* Disarm timers */
   os_timer_disarm(&mqtt_idle_timer);
 
-  TOLOG(LOG_DEBUG, "mqtt_disconnect_cb()");
-
-  /* Close connection */
-  system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
-}
-
-void ICACHE_FLASH_ATTR matt_reconnect_cb(void *arg, sint8 err)  {
-  /* Disarm timers */
-  os_timer_disarm(&mqtt_idle_timer);
-
-  if(espconn != NULL) {
-    /* Close connection */
-    system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
-  }
-  else {
-    net_connect( NULL );
-  }
+  TOLOG(LOG_DEBUG, "delayed reconnect");
+  net_connect( NULL );
 }
 
 static void ICACHE_FLASH_ATTR mqtt_idle_cb(void *arg) {
   /* Disarm idle timer */
   os_timer_disarm(&mqtt_idle_timer);
 
-  TOLOG(LOG_DEBUG, "idle_cb()");
+  TOLOG(LOG_DEBUG, "idle");
+
+  if(STATE_OPERATIONAL != state) {
+    /* Switch on/off the led (there is negative polarization) */
+    GPIO_OUTPUT_SET(13, !GPIO_INPUT_GET(13));
+  }
 
   /* Send the event */
   system_os_post(MQTT_HANDLER_ID, SIG_TIMEOUT, 0);
@@ -95,12 +83,8 @@ static void ICACHE_FLASH_ATTR mqtt_idle_cb(void *arg) {
   os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
 }
 
-
 void ICACHE_FLASH_ATTR mqtt_ready_cb(void *arg) {
-  TOLOG(LOG_DEBUG, "mqtt_ready_cb()");
-
-  /* Switch off the led (there is negative polarization) */
-  GPIO_OUTPUT_SET(13, 1);
+  TOLOG(LOG_DEBUG, "mqtt ready");
 
   espconn = NULL;
   
@@ -125,19 +109,19 @@ void ICACHE_FLASH_ATTR mqtt_ready_cb(void *arg) {
   os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
   os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
 
-  /* Switch on the led (there is negative polarization) */
-  GPIO_OUTPUT_SET(13, 0);
+  idle_counter = 60;
+  state = STATE_DISCONNECTED;
 
   /** Return */
   return;
 
 failure:
-  /* force to restart the system */
-  mqtt_disconnect_cb(NULL);
+  /* force to reconnect */
+  net_connect(NULL);
 }
 
 void ICACHE_FLASH_ATTR mqtt_udp_ready_cb(void *arg) {
-  TOLOG(LOG_DEBUG, "mqtt_udp_ready_cb()");
+  TOLOG(LOG_DEBUG, "mqtt udp ready");
 }
 
 void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) {
@@ -146,7 +130,7 @@ void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) 
   uint8_t tab[4] = { 0 };
   size_t i;
 
-  TOLOG(LOG_DEBUG, "mqtt_recv_cb()");
+  TOLOG(LOG_DEBUG, "recv");
 
   /* Disarm timers */
   os_timer_disarm(&mqtt_idle_timer);
@@ -166,15 +150,15 @@ void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) 
   os_memcpy(data.value, pdata, len);
   data.length = len;
 
-  TOLOG(LOG_ERR, "Receiving length: ");
+  TOLOG(LOG_DEBUG, "Receiving length: ");
   os_memset(tab, 0x00, sizeof(tab)/sizeof(tab[0]));
   os_sprintf(tab, "%d", data.length);
-  TOLOG(LOG_ERR, tab);
-  //for(i=0; i<data.length; ++i) {
+  TOLOG(LOG_DEBUG, tab);
+  // for(i=0; i<data.length; ++i) {
   //  os_sprintf(tab, "%02x ", big_buffer[i]);
   //  TOLOG(LOG_INFO, tab);
-  //}
-  //TOLOG(LOG_INFO, "\r\n");
+  // }
+  // TOLOG(LOG_INFO, "\r\n");
 
   /* Send the event */
   system_os_post(MQTT_HANDLER_ID, SIG_RX, 0);
@@ -198,25 +182,22 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
       break;
     case 0xF1:
       wifi_station_disconnect();
-      mqtt_restart_cb( NULL );
+      system_restart();
       break;
     case 0xF2:
       cfg_set_defaults();
       cfg_save();
-      mqtt_restart_cb( NULL );
+      system_restart();
       break;
   }
 }
 
 void ICACHE_FLASH_ATTR mqtt_sent_cb(void *arg) {
-  TOLOG(LOG_DEBUG, "mqtt_sent_cb()");
+  TOLOG(LOG_DEBUG, "sent");
   data.length = 0;
   if( pending_data ) {
     pending_data = 0;
     system_os_post(MQTT_HANDLER_ID, SIG_TIMEOUT, 0);
-    /* Start idle timer */
-    //os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
-    //os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
   }
 }
 
@@ -252,71 +233,25 @@ int ICACHE_FLASH_ATTR get_gpio_num(uint8_t* name, size_t name_len) {
 
 mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, const mqtt_channel_t *channel) {
   extern struct user_cfg cfg;
-  mqtt_rc_t rc = RC_SUCCESS;
-  uint8_t *message;
   uint8_t *ptr = NULL;
-  int offset;
-  mqtt_publish_params_t publish_params = { };
   mqtt_subscribe_params_t subscribe_params = { };
-  
-  /* Publishing configuration */
-  ptr = data.value;
-  publish_params.topic.value = ptr;
-  if(cfg.ha_node_id_len) {
-    publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s/config", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id);
-  }
-  else {
-    publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/config", cfg.ha_base_t, cfg.dev_name, cfg.dev_id);
-  }
-  message = publish_params.message.value = ptr + publish_params.topic.length;
-  offset = 0;
-  message[0] = '{';
-  offset += 1;
-  if(cfg.ha_node_id_len) {
-    offset += os_sprintf( message + offset, "\"~\": \"%s/%s/%s/%s\",", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id );
-  }
-  else {
-    offset += os_sprintf( message + offset, "\"~\": \"%s/%s/%s\",", cfg.ha_base_t, cfg.dev_name, cfg.dev_id );
-  }
-  offset += os_sprintf( message + offset, "\"name\": null,");
-  offset += os_sprintf( message + offset, "\"uniq_id\": \"%s\",", cfg.dev_id);
-  offset += os_sprintf( message + offset, "\"cmd_t\": \"~/%s\",", cfg.ha_cmd_t);
-  offset += os_sprintf( message + offset, "\"stat_t\": \"~/%s\",", cfg.ha_stat_t);
-  offset += os_sprintf( message + offset, "\"avty_t\": \"~/%s\",", cfg.ha_avty_t);
-  offset += os_sprintf( message + offset, "\"schema\": \"json\",");
-  offset += os_sprintf( message + offset, "\"pl_on\": \"%s\",", cfg.ha_pl_on);
-  offset += os_sprintf( message + offset, "\"pl_off\": \"%s\",", cfg.ha_pl_off);
-  offset += os_sprintf( message + offset, "\"pl_avail\" : \"%s\",", cfg.ha_pl_avail);
-  offset += os_sprintf( message + offset, "\"pl_not_avail\": \"%s\",", cfg.ha_pl_not_avail);
-  offset += os_sprintf( message + offset, "\"stat_on\": \"%s\",", cfg.ha_stat_on);
-  offset += os_sprintf( message + offset, "\"stat_off\": \"%s\",", cfg.ha_stat_off);
-  offset += os_sprintf( message + offset, "\"ret\": \"false\",");
-  offset += os_sprintf( message + offset, "\"opt\": \"false\",");
-  offset += os_sprintf( message + offset, "\"dev\": {\"ids\": [\"%s\"],\"name\": \"%s\",\"mf\": \"Innovasoft\",\"mdl\": \"%s\",\"sw\": \"%s\",\"sn\": \"%s\",\"hw\": \"%s\"},", cfg.dev_id, cfg.dev_id, cfg.dev_name, cfg.dev_sw, cfg.dev_id, cfg.dev_hw);
-  offset += os_sprintf( message + offset, "\"o\": {\"name\":\"ESP-OS\",\"sw\": \"%s\",\"url\": \"https://www.innovasoft.org\"}", cfg.dev_sw);
-  offset += os_sprintf( message + offset, "}");
-  publish_params.message.length = offset;
-  if( MQTT_SUCCESS != self->publish(self, &publish_params) ) {
-    rc =  RC_IMPL_SPEC_ERR;
-    goto finish;
+
+  if( RC_SUCCESS != pkt->rc) {
+    TOLOG(LOG_ERR, "");
+    return;
   }
 
-  /* Subscribing to receive commands */
+  /* Subscribing to receive Home Assistant status (it shall be configured in mosquito plugin) */
   ptr = data.value;
   subscribe_params.filter.value = ptr;
-  if(cfg.ha_node_id_len) {
-    subscribe_params.filter.length = os_sprintf( ptr, "%s/%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id, cfg.ha_cmd_t );
-  }
-  else {
-    subscribe_params.filter.length = os_sprintf( ptr, "%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.dev_id, cfg.ha_cmd_t );
-  }
+  subscribe_params.filter.length = os_sprintf( ptr, "%s", STATUS_TOPIC );
   if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
-    rc =  RC_IMPL_SPEC_ERR;
-    goto finish;   
+    return RC_IMPL_SPEC_ERR;
   }
+  idle_counter = 60;
+  state = STATE_CONNECTED;
 
-finish:
-  return rc;
+  return RC_SUCCESS;
 }
 
 mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
@@ -324,8 +259,90 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
   extern volatile int gpio_num;
   int gpio_state;
   mqtt_publish_params_t publish_params = { };
+  mqtt_subscribe_params_t subscribe_params = { };
   size_t offset;
   uint8_t *ptr, *message;
+  uint32_t version;
+
+  /* Check if Home Assistant is online */
+  if( ((ARRAYLEN(STATUS_TOPIC) - 1) == pkt->topic.length) && 
+      (0 == os_memcmp(STATUS_TOPIC, pkt->topic.value, pkt->topic.length)) &&
+      (cfg.ha_pl_avail_len == pkt->message.length) &&
+      (0 == os_memcmp(cfg.ha_pl_avail, pkt->message.value, pkt->message.length)) ) {
+    /* Publishing configuration */
+    mqtt_cli_get_lib_version( &version );
+    ptr = data.value;
+    publish_params.topic.value = ptr;
+    if(cfg.ha_node_id_len) {
+      publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s/config", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id);
+    }
+    else {
+      publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/config", cfg.ha_base_t, cfg.dev_name, cfg.dev_id);
+    }
+    message = publish_params.message.value = ptr + publish_params.topic.length;
+    offset = 0;
+    message[0] = '{';
+    offset += 1;
+    if(cfg.ha_node_id_len) {
+      offset += os_sprintf( message + offset, "\"~\": \"%s/%s/%s/%s\",", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id );
+    }
+    else {
+      offset += os_sprintf( message + offset, "\"~\": \"%s/%s/%s\",", cfg.ha_base_t, cfg.dev_name, cfg.dev_id );
+    }
+    offset += os_sprintf( message + offset, "\"name\": null,");
+    offset += os_sprintf( message + offset, "\"uniq_id\": \"%s\",", cfg.dev_id);
+    offset += os_sprintf( message + offset, "\"cmd_t\": \"~/%s\",", cfg.ha_cmd_t);
+    offset += os_sprintf( message + offset, "\"stat_t\": \"~/%s\",", cfg.ha_stat_t);
+    offset += os_sprintf( message + offset, "\"avty_t\": \"~/%s\",", cfg.ha_avty_t);
+    offset += os_sprintf( message + offset, "\"schema\": \"json\",");
+    offset += os_sprintf( message + offset, "\"pl_on\": \"%s\",", cfg.ha_pl_on);
+    offset += os_sprintf( message + offset, "\"pl_off\": \"%s\",", cfg.ha_pl_off);
+    offset += os_sprintf( message + offset, "\"pl_avail\" : \"%s\",", cfg.ha_pl_avail);
+    offset += os_sprintf( message + offset, "\"pl_not_avail\": \"%s\",", cfg.ha_pl_not_avail);
+    offset += os_sprintf( message + offset, "\"stat_on\": \"%s\",", cfg.ha_stat_on);
+    offset += os_sprintf( message + offset, "\"stat_off\": \"%s\",", cfg.ha_stat_off);
+    offset += os_sprintf( message + offset, "\"ret\": \"false\",");
+    offset += os_sprintf( message + offset, "\"opt\": \"false\",");
+    offset += os_sprintf( message + offset, "\"dev\": {\"ids\": [\"%s\"],\"name\": \"%s\",\"mf\": \"Innovasoft\",\"mdl\": \"%s\",\"sw\": \"%s\",\"sn\": \"%s\",\"hw\": \"%s\"},", cfg.dev_id, cfg.dev_id, cfg.dev_name, cfg.dev_sw, cfg.dev_id, cfg.dev_hw);
+    offset += os_sprintf( message + offset, "\"o\": {\"name\":\"mqttcli\",\"sw\": \"%08x\",\"url\": \"https://www.innovasoft.org\"}", version);
+    offset += os_sprintf( message + offset, "}");
+    publish_params.message.length = offset;
+    if( MQTT_SUCCESS != self->publish(self, &publish_params) ) {
+      system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
+      return RC_IMPL_SPEC_ERR;
+    }
+
+    /* Subscribing to receive commands */
+    ptr = data.value;
+    subscribe_params.filter.value = ptr;
+    if(cfg.ha_node_id_len) {
+      subscribe_params.filter.length = os_sprintf( ptr, "%s/%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id, cfg.ha_cmd_t );
+    }
+    else {
+      subscribe_params.filter.length = os_sprintf( ptr, "%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.dev_id, cfg.ha_cmd_t );
+    }
+    if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
+      system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
+      return RC_IMPL_SPEC_ERR;   
+    }
+    idle_counter = 10;
+    state = STATE_AVAILABLE;
+    return RC_SUCCESS;
+  }
+
+  if( ((ARRAYLEN(STATUS_TOPIC) - 1) == pkt->topic.length) && 
+    (0 == os_memcmp(STATUS_TOPIC, pkt->topic.value, pkt->topic.length)) &&
+    (cfg.ha_pl_not_avail_len == pkt->message.length) &&
+    (0 == os_memcmp(cfg.ha_pl_not_avail, pkt->message.value, pkt->message.length)) ) {
+    /* Close connection */
+    system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
+    return RC_SUCCESS;
+  }
+
+  if(STATE_OPERATIONAL != state) {
+    system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
+    return RC_IMPL_SPEC_ERR;
+  }
 
   /* Checking if correct command was send */
   ptr = pkt->topic.value;
@@ -406,58 +423,11 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
   message = publish_params.message.value = ptr + publish_params.topic.length;
   publish_params.message.length = os_sprintf( message, "%s", ( gpio_state > 0 ) ? cfg.ha_stat_on : cfg.ha_stat_off );
   if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
+    system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
     return RC_IMPL_SPEC_ERR;
   }
 
   return RC_SUCCESS;
-}
-
-void cb_suback(const mqtt_cli_ctx_cb_t *self, const mqtt_suback_t *pkt, const mqtt_channel_t *channel) {
-  extern struct user_cfg cfg;
-  extern volatile int gpio_num;
-  int gpio_state;
-  uint8_t *ptr, *message;
-  mqtt_publish_params_t publish_params = { };
-
-  /* Publishing current device availability */
-  ptr = data.value;
-  publish_params.topic.value = ptr;
-  if(cfg.ha_node_id_len) {
-    publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id, cfg.ha_avty_t);
-  }
-  else {
-    publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.dev_id, cfg.ha_avty_t);
-  }
-  message = publish_params.message.value = ptr + publish_params.topic.length;
-  publish_params.message.length = os_sprintf( message, "%s", cfg.ha_pl_avail );
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    return; 
-  }
-
-  /* Publishing current device state */
-  ptr = data.value;
-  publish_params.topic.value = ptr;
-  if(cfg.ha_node_id_len) {
-    publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id, cfg.ha_stat_t );
-  }
-  else {
-    publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.dev_id, cfg.ha_stat_t );
-  }
-  /* Determining GPIO */
-  gpio_num = get_gpio_num(cfg.ha_stat_t, cfg.ha_stat_t_len);
-  /* Obtaining current GPIO state */
-  gpio_state = GPIO_INPUT_GET( gpio_num );
-  message = publish_params.message.value = ptr + publish_params.topic.length;
-  publish_params.message.length = os_sprintf( message, "%s", ( gpio_state > 0 ) ? cfg.ha_stat_on : cfg.ha_stat_off );
-  if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    return;
-  }
-
-  /* Let HA to process configuration packet */
-  os_delay_us( 2e6 );
-
-  /* Switch off the led (there is negative polarization) */
-  GPIO_OUTPUT_SET(13, 1);
 }
 
 static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
@@ -476,19 +446,23 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
   int gpio_state;
   extern volatile int gpio_num;
 
-  TOLOG(LOG_DEBUG, "mqtt_handler()");
+  TOLOG(LOG_DEBUG, "handler");
 
   /* Disarm idle timer */
   os_timer_disarm(&mqtt_idle_timer);
 
+  if(NULL == e) {
+    /* force hard reset */
+    system_restart();
+    return;
+  }
+
   switch(e->sig) {
     case SIG_CLOSE:
-      TOLOG(LOG_CRIT,"SIG_CLOSE");
-      espconn = NULL;
-      net_tcp_disconnect();
-      mqtt_initialized = false;
-      mqtt_cli_destr( &cli );
-      if( FUN_OK != net_connect( NULL ) ) {
+      if(true == mqtt_initialized) {
+        TOLOG(LOG_CRIT,"SIG_CLOSE");
+        mqtt_cli_destr( &cli );
+        mqtt_initialized = false;
         goto restart;
       }
       break;
@@ -500,7 +474,6 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       }
       cli.set_cb_connack( &cli, cb_connack );
       cli.set_cb_publish( &cli, cb_publish );
-      cli.set_cb_suback(  &cli, cb_suback );
       cli.set_br_keepalive( &cli, (uint16_t) 60);
       /** Set the Will */
       ptr0 = ptr = &big_buffer[0];
@@ -551,22 +524,36 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       mqtt_initialized = true;
       break;
     case SIG_TIMEOUT:
+      if( (state == STATE_CONNECTED || state == STATE_DISCONNECTED || state == STATE_AVAILABLE) && idle_counter > 0 ) {
+        --idle_counter;
+      }
+      else if (state == STATE_AVAILABLE) {
+        state = STATE_UNSYNCHRONIZED;
+      }
+      else if (state == STATE_DISCONNECTED || state == STATE_CONNECTED ) {
+        /* Restart the system */
+        os_timer_disarm(&mqtt_idle_timer);
+        system_restart();
+        return;
+      }
       data.length = 0;
     case SIG_RX:
       if(false == mqtt_initialized) {
-        TOLOG(LOG_ERR, "");
-        goto restart;        
+        break;     
       }
       /* Processing and sending */
       rc = cli.process( &cli, &data, NULL);
       if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
         if(rc == MQTT_CONN_REJECTED) {
           TOLOG(LOG_ERR, "Connection rejected");
-          system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0); 
+          TOLOG(LOG_ERR, cfg.br_host);
+          TOLOG(LOG_ERR, cfg.br_username);
+          TOLOG(LOG_ERR, cfg.br_pass);
+          goto restart;
         }
         else if(rc == MQTT_NOT_CONNECTED) {
           TOLOG(LOG_ERR, "Not connected");
-          system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);          
+          goto restart;     
         }
         else {
           TOLOG(LOG_ERR, "");
@@ -577,18 +564,57 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       length = data.length;
 
       if( length && espconn ) {
-        TOLOG(LOG_ERR, "Sending length: ");
+        TOLOG(LOG_DEBUG, "Sending length: ");
         os_memset(tab, 0x00, sizeof(tab)/sizeof(tab[0]));
         os_sprintf(tab, "%d", length);
-        TOLOG(LOG_ERR, tab);
-        //for(i=0; i<length; ++i) {
+        TOLOG(LOG_DEBUG, tab);
+        // for(i=0; i<length; ++i) {
         //  os_sprintf(tab, "%02x ", big_buffer[i]);
         //  TOLOG(LOG_INFO, tab);
-        //}
-        //TOLOG(LOG_INFO, "\r\n");
+        // }
+        // TOLOG(LOG_INFO, "\r\n");
         if( 0 != (err=espconn_send( espconn, (uint8*) big_buffer, length)) ) {
           TOLOG(LOG_ERR, "");
+          goto restart;
         }
+      }
+      else if( STATE_UNSYNCHRONIZED == state ) {
+        /* Publishing current device availability */
+        ptr = data.value;
+        publish_params.topic.value = ptr;
+        if(cfg.ha_node_id_len) {
+          publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id, cfg.ha_avty_t);
+        }
+        else {
+          publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.dev_id, cfg.ha_avty_t);
+        }
+        message = publish_params.message.value = ptr + publish_params.topic.length;
+        publish_params.message.length = os_sprintf( message, "%s", cfg.ha_pl_avail );
+        if(MQTT_SUCCESS != cli.publish( &cli, &publish_params)) {
+          goto restart;
+        }
+
+        /* Publishing current device state */
+        ptr = data.value;
+        publish_params.topic.value = ptr;
+        if(cfg.ha_node_id_len) {
+          publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.ha_node_id, cfg.dev_id, cfg.ha_stat_t );
+        }
+        else {
+          publish_params.topic.length = os_sprintf( ptr, "%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.dev_id, cfg.ha_stat_t );
+        }
+        /* Determining GPIO */
+        gpio_num = get_gpio_num(cfg.ha_stat_t, cfg.ha_stat_t_len);
+        /* Obtaining current GPIO state */
+        gpio_state = GPIO_INPUT_GET( gpio_num );
+        message = publish_params.message.value = ptr + publish_params.topic.length;
+        publish_params.message.length = os_sprintf( message, "%s", ( gpio_state > 0 ) ? cfg.ha_stat_on : cfg.ha_stat_off );
+        if(MQTT_SUCCESS != cli.publish(&cli, &publish_params)) {
+          goto restart;
+        }
+        /* Switch off the led (there is negative polarization) */
+        GPIO_OUTPUT_SET(13, 1);
+        state = STATE_OPERATIONAL;
       }
       break;
     default:
@@ -600,6 +626,7 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
     pending_data = 1;
   }
   else {
+    /* start idle timer */
     os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
     os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
   }
@@ -607,5 +634,10 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
   return;
 
   restart:
-    mqtt_restart_cb( NULL );
+    /* initiate delayed restart */
+    idle_counter = 60;
+    state = STATE_DISCONNECTED;
+    /* start idle timer */
+    os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
+    os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
 }

@@ -7,6 +7,11 @@
 
 struct mqtt_common_ctx;
 
+//#define MAKE_UINT32( B ) ((uint32_t)(*B << 24u)) | ((uint32_t)(*(B+1) << 16u)) | ((uint32_t)(*(B+2) << 8u)) | ((uint32_t)*(B+3))
+#define MAKE_UINT16( PTR ) (((uint16_t) (*(PTR) << 8u)) | (uint16_t)(*(PTR+1)))
+#define UNUSED_VAL( VAR ) (void) (VAR)
+#define UNUSED_PTR( VAR ) (void*) (VAR)
+
 /** Maximum buffer size */
 #define DEFAULT_BUFSIZE  1024
 /** Default QoS: 0 */
@@ -39,7 +44,7 @@ struct mqtt_common_ctx;
 /** Maximum length of the Authentication Method */
 #define MAX_AUTHMETHOD_LEN    32
 /** Minimum length of the User ID */
-#define MIN_USERID_LEN        8
+#define MIN_USERID_LEN        1
 /** Maximum length of the User ID */
 #define MAX_USERID_LEN        23
 /** Minimum length of the User Name */
@@ -69,12 +74,12 @@ struct mqtt_common_ctx;
 /** Maximum number of topic filters in subscribe packet */
 #define MAX_TOPIC_FILTERS     8
 
-/** Define architecture specific attributes */
+/** Define architecture specific attributes (if any) */
 #define __ATTR ICACHE_FLASH_ATTR
 
-#ifndef TOLOG
-    #define TOLOG(level, msg)
-#endif
+/** Define logger function (if any) */
+#define __TOLOG( level, msg)
+
 
 /** Packet typed */
 #define PTYPE_NONE        ((uint8_t) 0x00)
@@ -110,6 +115,7 @@ struct mqtt_common_ctx;
 #define MQTT_NOT_SUPPORTED       ( (uint16_t) 0x0A0D )
 #define MQTT_NOT_INITIALIZED     ( (uint16_t) 0x0A0E )
 #define MQTT_CONN_REJECTED       ( (uint16_t) 0x0A0F )
+#define MQTT_NO_MATCHING         ( (uint16_t) 0x0A10 )
 
 typedef enum {
   /** Byte */
@@ -209,7 +215,7 @@ typedef enum {
   /** Shared Subscriptions not supported */
   RC_SHARE_SUBS_NOT_SUPPORTED = 0x9E,
   /** Connection rate exceeded */
-  RC_CORRECT_RATe_EXCEEDED = 0x9F,
+  RC_CORRECT_RATE_EXCEEDED = 0x9F,
   /** Maximum connect time */
   RC_MAX_CONNECT_TIME = 0xA0,
   /** Subscription Identifiers not supported */

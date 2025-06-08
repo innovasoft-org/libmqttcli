@@ -25,6 +25,11 @@ SUBDIRS=  \
 	user    \
 	driver
 
+#SUBDIRS=  \
+#	user    \
+#	driver \
+#	mqttcli
+
 endif # } PDIR
 
 APPDIR = .
@@ -51,6 +56,11 @@ endif
 COMPONENTS_eagle.app.v6 = \
 	user/libuser.a      \
 	driver/libdriver.a
+
+#COMPONENTS_eagle.app.v6 = \
+#	user/libuser.a      \
+#	driver/libdriver.a \
+#	mqttcli/libmqttcli.a
 
 LINKFLAGS_eagle.app.v6 = \
 	-L../lib        \
