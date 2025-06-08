@@ -18,33 +18,9 @@
 #define DEFAULT_PORT  1884
 #define DEFAULT_BUFFER_SIZE 1024
 
-/* Short option: port */
-#define S_OPT_PORT          'p'
-/* Long option: port */
-#define L_OPT_PORT          "port"
-/* Short option: group */
-#define S_OPT_HOST          'h'
-/* Long option: group */
-#define L_OPT_HOST          "host"
-/** Short option: buffer size*/
-#define S_OPT_BUFFER_SIZE   'b'
-/** Long option: buffer size */
-#define L_OPT_BUFFER_SIZE   "buffer-size"
-/** Short option: reuse address */
-#define S_OPT_REUSE_ADDR    'r'
-/** Long option: reuse address */
-#define L_OPT_REUSE_ADDR    "reuse-addr"
-/** Short option: topic */
-#define S_OPT_TOPIC         't'
-/** Long option: topic */
-#define L_OPT_TOPIC         "topic"
-/** Short option: message */
-#define S_OPT_MESSAGE       'm'
-/** Long option: message */
-#define L_OPT_MESSAGE       "message"
-/** Short option: user id */
+/** Short option: userid */
 #define S_OPT_USERID        'I'
-/** Long option: user id */
+/** Long option: userid */
 #define L_OPT_USERID        "userid"
 /** Short option: user name */
 #define S_OPT_USERNAME      'N'
@@ -54,6 +30,34 @@
 #define S_OPT_PASSWORD      'P'
 /** Long option: password */
 #define L_OPT_PASSWORD      "password"
+/** Short option: buffer size*/
+#define S_OPT_BUFFER_SIZE   'b'
+/** Long option: buffer size */
+#define L_OPT_BUFFER_SIZE   "buffer-size"
+/* Short option: host */
+#define S_OPT_HOST          'h'
+/* Long option: host */
+#define L_OPT_HOST          "host"
+/** Short option: message */
+#define S_OPT_MESSAGE       'm'
+/** Long option: message */
+#define L_OPT_MESSAGE       "message"
+/** Short option: options */
+#define S_OPT_OPTIONS       'o'
+/** Long option: options */
+#define L_OPT_OPTIONS       "options"
+/* Short option: port */
+#define S_OPT_PORT          'p'
+/* Long option: port */
+#define L_OPT_PORT          "port"
+/** Short option: reuse address */
+#define S_OPT_REUSE_ADDR    'r'
+/** Long option: reuse address */
+#define L_OPT_REUSE_ADDR    "reuse-addr"
+/** Short option: topic */
+#define S_OPT_TOPIC         't'
+/** Long option: topic */
+#define L_OPT_TOPIC         "topic"
 /** Short option: verbose */
 #define S_OPT_VERBOSE      'v'
 /** Long option: verbose */
@@ -141,10 +145,6 @@ typedef struct program_ctx {
   char password[MAX_PASSWORD_LEN+1];
   /** Verbose */
   uint8_t verbose;
-  /** Stores program state */
-  uint8_t state;
-  /** Stores timer interrupt status */
-  uint8_t timer_int;
   /** Stores MQTT protocol's version */
   uint8_t mqtt_version;
   /** Stores 1 if TLS is enabled, otherwise 0 */
@@ -159,6 +159,8 @@ typedef struct program_ctx {
   char* key;
   /** Stores Publish Packet Fixed Header flags (if any) */
   uint8_t flags;
+  /** Stores Subscribe Packet options (if any) */
+  uint8_t options;
 } context_t;
 
 #define IS_MULTICAST(IPADDR) ( (IPADDR & 0x000000E0) == 0x000000E0 )

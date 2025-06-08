@@ -106,8 +106,13 @@ window.addEventListener(\"DOMContentLoaded\", (event) => {\
   <div class=\"legend\"> System settings </div>\
   <table>\
     <tr>\
-      <td class=\"col1\" align=\"right\"><label for=\"dev_ttr\">* Time To Reconnect:</label></td>\
-      <td align=\"left\"><input type=\"number\" name=\"dev_ttr\" id=\"dev_ttr\" required value=\"5000\" min=\"0\" max=\"600000\" step=\"500\"></td>\
+      <td class=\"col1\" align=\"right\"><label for=\"dev_ttc\">* Time To Connect[ms]:</label></td>\
+      <td align=\"left\"><input type=\"number\" name=\"dev_ttc\" id=\"dev_ttc\" required value=\"60000\" min=\"0\" max=\"600000\" step=\"500\"></td>\
+      <td class=\"err\" id=\"dev_ttc_e\"></td>\
+    </tr>\
+    <tr>\
+      <td align=\"right\"><label for=\"dev_ttr\">* Time To Reset[ms]:</label></td>\
+      <td align=\"left\"><input type=\"number\" name=\"dev_ttr\" id=\"dev_ttr\" required value=\"60000\" min=\"60000\" max=\"600000\" step=\"500\"></td>\
       <td class=\"err\" id=\"dev_ttr_e\"></td>\
     </tr>\
   </table>\
@@ -228,7 +233,6 @@ window.addEventListener(\"DOMContentLoaded\", (event) => {\
 </html>";
 
 const uint8_t EMPTY[]             = "";
-const uint8_t DEV_TTR[]           = "dev_ttr";
 const uint8_t WIFI_SSID[]         = "wifi_ssid";
 const uint8_t WIFI_PASS[]         = "wifi_pass";
 const uint8_t BR_HOST[]           = "br_host";
@@ -248,6 +252,8 @@ const uint8_t HA_PL_NOT_AVAIL[]   = "ha_pl_not_avail";
 const uint8_t HA_STAT_ON[]        = "ha_stat_on";
 const uint8_t HA_STAT_OFF[]       = "ha_stat_off";
 const uint8_t DEV_ID[]            = "dev_id";
+const uint8_t DEV_TTR[]           = "dev_ttr";
+const uint8_t DEV_TTC[]           = "dev_ttc";
 const uint8_t E_VALUE_INVALID[]   = "Value is invalid";
 const uint8_t E_LENGTH_INVALID[]  = "Length is invalid";
 const uint8_t E_MEMORY[]          = "Memory failure";
@@ -255,7 +261,6 @@ const uint8_t E_MEMORY[]          = "Memory failure";
 /** Accepted json string */
 typedef enum { 
   ID_EMPTY = 0,
-  ID_DEV_TTR,
   ID_WIFI_SSID, 
   ID_WIFI_PASS,
   ID_BR_HOST,
@@ -275,6 +280,8 @@ typedef enum {
   ID_HA_STAT_ON,
   ID_HA_STAT_OFF,
   ID_DEV_ID,
+  ID_DEV_TTR,
+  ID_DEV_TTC,
   ID_E_VALUE_INVALID,
   ID_E_LENGTH_INVALID,
   ID_E_MEMORY
@@ -282,7 +289,6 @@ typedef enum {
 
 const uint8_t *STRINGS[] = {
   EMPTY,
-  DEV_TTR,
   WIFI_SSID,
   WIFI_PASS,
   BR_HOST,
@@ -302,6 +308,8 @@ const uint8_t *STRINGS[] = {
   HA_STAT_ON,
   HA_STAT_OFF,
   DEV_ID,
+  DEV_TTR,
+  DEV_TTC,
   E_VALUE_INVALID,
   E_LENGTH_INVALID,
   E_MEMORY
@@ -322,6 +330,7 @@ static uint16_t ICACHE_FLASH_ATTR parse_config_json(const char* buf, const size_
   extern struct user_cfg cfg;
   size_t offset = 0, value_offset, value_len, length;
   string_ids string;
+  uint32_t value;
 
   TOLOG(LOG_DEBUG, "parse_config_json()");
 
@@ -357,6 +366,10 @@ json_param:
   if( !os_memcmp( &buf[offset], DEV_TTR, ARRAYLEN(DEV_TTR)-1 ) ) {
     string = ID_DEV_TTR;
     offset += ARRAYLEN(DEV_TTR) - 1;
+  }
+  else if( !os_memcmp( &buf[offset], DEV_TTC, ARRAYLEN(DEV_TTC)-1 ) ) {
+    string = ID_DEV_TTC;
+    offset += ARRAYLEN(DEV_TTC) - 1;
   }
   else if( !os_memcmp( &buf[offset], WIFI_SSID, ARRAYLEN(WIFI_SSID)-1 ) ) {
     string = ID_WIFI_SSID;
@@ -488,14 +501,22 @@ json_param:
 
   switch(string) {
     case ID_DEV_TTR:
-      if(value_len > sizeof(cfg.br_port)) {
+      ATOI(value, buf, value_offset, buf_len);
+      // 600000 shall be changed in html string as well
+      if(value > (uint32_t) 600000 || value < (uint32_t) 60000) {
         error_list[ID_DEV_TTR] = ID_E_LENGTH_INVALID;
         break;
       }
-      cfg.dev_ttr = 0;
-      while( ISDIGIT( buf[value_offset] ) && buf_len > value_offset ) {
-        cfg.dev_ttr = cfg.dev_ttr * 10 + (uint32_t) ( buf[value_offset++] - 0x30 );
+      cfg.dev_ttr = value;
+      break;
+    case ID_DEV_TTC:
+      ATOI(value, buf, value_offset, buf_len);
+      // 600000 shall be changed in html string as well
+      if(value > (uint32_t) 600000) {
+        error_list[ID_DEV_TTC] = ID_E_LENGTH_INVALID;
+        break;
       }
+      cfg.dev_ttc = value;
       break;
     case ID_WIFI_SSID:
       if(value_len > ARRAYLEN(cfg.wifi_ssid)) {
@@ -522,14 +543,13 @@ json_param:
       cfg.br_host_len = value_len;
       break;
     case ID_BR_PORT:
-      if(value_len > sizeof(cfg.br_port)) {
+      ATOI(value, buf, value_offset, buf_len);
+      // 65535 shall be changed in html string as well
+      if(value > (uint32_t) 65535) {
         error_list[ID_BR_PORT] = ID_E_LENGTH_INVALID;
         break;
       }
-      cfg.br_port = 0;
-      while( ISDIGIT( buf[value_offset] ) && buf_len > value_offset ) {
-        cfg.br_port = cfg.br_port * 10 + (uint32_t) ( buf[value_offset++] - 0x30 );
-      }
+      cfg.br_port = value;
       break;
     case ID_BR_USERID:
       if(value_len > ARRAYLEN(cfg.br_userid)) {
@@ -842,10 +862,7 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
       goto finish;     
     }
     // Convert string to int
-    length = 0;
-    while( ISDIGIT( ptr[offset] ) && len > offset ) {
-      length = length * 10 + ( ptr[offset++] - 0x30 );
-    }
+    ATOI(length, ptr, offset, len);
     if( offset >= len || length == 0 ) {
       ptr = &big_buffer[0];
       len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_400);

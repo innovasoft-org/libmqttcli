@@ -8,9 +8,10 @@
 #include "user_util.h"
 
 const uint8_t DEFAULT_DEV_NAME[] = "switch";
-const uint8_t DEFAULT_DEV_SW[]   = "1.0";
-const uint8_t DEFAULT_DEV_HW[]   = "1.0rev2";
-const uint16_t DEFAULT_DEV_TTR   = 5000;
+const uint8_t DEFAULT_DEV_SW[]   = "2.0";
+const uint8_t DEFAULT_DEV_HW[]   = "Sonoff 1.0r2";
+const uint32_t DEFAULT_DEV_TTR   = 60000;
+const uint32_t DEFAULT_DEV_TTC   = 60000;
 
 struct user_cfg cfg;
 
@@ -51,6 +52,9 @@ void cfg_set_defaults() {
 
   /* Parameter: dev_ttr */
   cfg.dev_ttr = DEFAULT_DEV_TTR;
+
+  /* Parameter: dev_ttc */
+  cfg.dev_ttc = DEFAULT_DEV_TTC;
 
   /* Parameter: dev_mode */
   cfg.dev_mode = MODE_CFG;

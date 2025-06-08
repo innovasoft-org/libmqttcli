@@ -21,8 +21,10 @@ struct user_cfg {
   uint8_t dev_hw[16];             /* 16 */
   /* Device hardware version length */
   uint8_t dev_hw_len;             /*  1 */
-  /** Time to Reconnect */
+  /** Time to Reset */
   uint32_t dev_ttr;               /*  4 */
+    /** Time to Connect */
+  uint32_t dev_ttc;               /*  4 */
   /** Wi-Fi ssid */
   uint8_t wifi_ssid[64];          /* 64 */
   /** Wi-Fi ssid length */
@@ -97,8 +99,8 @@ struct user_cfg {
   uint8_t ha_stat_off[16];        /* 16 */
   /** HA's state off length */
   uint8_t ha_stat_off_len;        /*  1 */
-  /** Used to make total structure size dividable by 4 */
-  uint8_t rfu[11];                /*  9 */
+  /** 851 + 5 divided by 4 */
+  uint8_t rfu[5];                 /*  5 */
 };
 
 uint16_t cfg_init( void );

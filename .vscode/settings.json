@@ -46,7 +46,8 @@
     "stoh",
     "suback",
     "tlsext",
-    "TOLOG"
+    "TOLOG",
+    "UNSYNCHRONIZED"
   ],
   "files.associations": {
     "signal.h": "c",
@@ -54,7 +55,12 @@
     "inet.h": "c",
     "user_interface.h": "c",
     "user_config.h": "c",
-    "user_log.h": "c"
+    "user_log.h": "c",
+    "mqtt_cli.h": "c",
+    "ioctl.h": "c",
+    "osapi.h": "c",
+    "string.h": "c",
+    "type_traits": "c"
   },
   "C_Cpp.errorSquiggles": "enabled"
 }

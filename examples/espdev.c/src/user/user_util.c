@@ -10,3 +10,4 @@ uint16_t htons (uint16_t x) {
 # error "What kind of system is this?"
 #endif
 }
+

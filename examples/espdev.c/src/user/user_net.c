@@ -538,14 +538,16 @@ uint16_t ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
 
   TOLOG(LOG_DEBUG, "net_connect()");
 
-  /* Switch off the led (there is negative polarization) */
-  GPIO_OUTPUT_SET(13, 1);
-
-  if( NULL == remote_addr && cfg.dev_ttr > 0) {
+  if( NULL == remote_addr && cfg.dev_ttc > 0) {
+    /* try to connect again after specified time */
     os_timer_setfn(&system_timer, (os_timer_func_t *) net_reconnect_cb, NULL);
-    os_timer_arm(&system_timer, cfg.dev_ttr, 0);
+    os_timer_arm(&system_timer, cfg.dev_ttc, 0);
+    /* Switch on the led (there is negative polarization) */
+    GPIO_OUTPUT_SET(13, 0);
     return FUN_E_INTERNAL;
   }
+
+  /* continue to configure at least UDP */
 
   if( ESPCONN_UDP == udp_conn.type ) {
     udp_remote_port = MULTICAST_PORT;
@@ -631,9 +633,6 @@ uint16_t ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
   /* Signal that communication is possible now */
   wifi_set_event_handler_cb( wifi_handle_event_cb );
 
-  /* Switch on the led (there is negative polarization) */
-  GPIO_OUTPUT_SET(13, 0);
-
   /* Success */
   return FUN_OK;
 }
@@ -674,7 +673,7 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
     case STATION_GOT_IP:
     {
       TOLOG(LOG_INFO, "STATION_GOT_IP");
-      /* Switch on the led (there is negative polarization) */
+      /* Switch on the led - got IP */
       GPIO_OUTPUT_SET(13, 0);
       /* Disarm system timer */
       os_timer_disarm(&system_timer);

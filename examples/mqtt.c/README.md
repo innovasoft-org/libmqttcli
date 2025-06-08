@@ -2,8 +2,8 @@
 ## NAME
 &emsp;mqtt - publishes or subscribes packets using MQTT protocol
 ## SYNOPSIS
-&emsp;mqtt _--pub [-b size] [--cafile file] [--capath dir] [--cert file] [-h host] [--key file] [-m message] [--mqtt-version version] [-P password] [-p port] [--reuse-addr] [-t topic] [-I user_id] [-N user_name] [-v]_  
-&emsp;mqtt _--sub [-b size] [--cafile file] [--capath dir] [--cert file] [-h host] [--key file] [--mqtt-version version] [-P password] [-p port] [--reuse-addr] [-t topic] [-I user_id] [-N user_name] [-v]_  
+&emsp;mqtt _--pub [-b size] [--cafile file] [--capath dir] [--cert file] [--flags number] [-h host] [--key file] [-m message] [--mqtt-version version] [-P password] [-p port] [--reuse-addr] [-t topic] [-I user_id] [-N user_name] [-v]_  
+&emsp;mqtt _--sub [-b size] [--cafile file] [--capath dir] [--cert file] [-h host] [--key file] [--mqtt-version version] [-o number] [-P password] [-p port] [--reuse-addr] [-t topic] [-I user_id] [-N user_name] [-v]_  
 ## DESCRIPTION
 &emsp;Connects to the broker using specified credentials and publishes to specified topic or starts waiting for subscribed topic.
 
@@ -15,6 +15,8 @@
 &emsp;&emsp;Sets a directory containing CA certificates in PEM format. By default none _capath_ is used.  
 &emsp;_--cert client's certificate_  
 &emsp;&emsp;Sets the path to the clients's certificate in PEM format. By default none _cert_ is used.  
+&emsp;_--flags number_  
+&emsp;&emsp;Sets the MQTT Publish packet Fixed Header flags. Default: `0`. 
 &emsp;_-h host, --host host_  
 &emsp;&emsp;Uses specified host to connect to. By default localhost is used.  
 &emsp;_--key private key_  
@@ -23,6 +25,8 @@
 &emsp;&emsp;Uses specified application message to publish it. By default empty message is used.  
 &emsp;_--mqtt-version version_  
 &emsp;&emsp;Sets the MQTT protocol version to be used. Values `4` and `5` are allowed. By default `5` is used.  
+&emsp;_-o number, --options number_  
+&emsp;&emsp;Sets options used with SUBSCRIBE packet. Default: '0'.   
 &emsp;_-P password, --password password_  
 &emsp;&emsp;Uses specified password. By default none password is iused.   
 &emsp;_-p port, --port port_  
@@ -59,8 +63,23 @@ mqtt --sub -h test.mosquitto.org -p 8884 -t '#' -v --mqtt-version 5 --cafile ./m
 ```
 mqtt --sub -h test.mosquitto.org -p 8885 --username rw --password readwrite -t '#' -v --mqtt-version 5 --cafile ./mosquitto.org.crt
 ```
-
-# Screenshots
+6. Client establishes connection to the `test.mosquitto.org` server using login, password and publishes to 'test': 'Hello World!!!' using QOS1
+```
+mqtt --pub -h test.mosquitto.org -p 1884 --username rw --password readwrite -t 'test' -m 'Hello World!!!' --flags 2 --mqtt-version 4 -v
+```
+7. Client establishes connection to the `test.mosquitto.org` server using login, password and publishes retained to 'my_test': 'Hello World!!!' using QOS1
+```
+mqtt --pub -h test.mosquitto.org -p 1884 --username rw --password readwrite -t 'test' -m 'Hello World!!!' --flags 2 --mqtt-version 4 -v
+```
+8. Client establishes connection to the `test.mosquitto.org` server using login, password and subscribes to 'my_test' with preferred QOS1
+```
+mqtt --sub -h test.mosquitto.org -p 1884 --username rw --password readwrite -t 'my_test' -o 2 --mqtt-version 5 -v
+```
+9. Client establishes connection to the `test.mosquitto.org` server using login, password and publishes retained to 'my_test': '' using QOS1, to remove retained message.
+```
+mqtt --pub -h test.mosquitto.org -p 1884 --username rw --password readwrite -t 'my_test' -m '' --flags 3 --mqtt-version 5 -v
+```
+# Screenshots 
 Typical flow from the console was presented on <a href="#fig01">Fig. 1</a>.
 
 <p align="center">

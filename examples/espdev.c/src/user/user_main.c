@@ -188,12 +188,12 @@ void ICACHE_FLASH_ATTR system_run_cb() {
       break;
     case MODE_OPE:
       /* Initializing callbacks */
-      net_regist_wifi_disconnected_cb( mqtt_restart_cb );
+      net_regist_wifi_disconnected_cb( matt_reconnect_cb );
       net_tcp_regist_recv_cb( mqtt_recv_cb );
       net_tcp_regist_sent_cb( mqtt_sent_cb );
       net_tcp_regist_connect_cb( mqtt_ready_cb );
-      net_tcp_regist_recon_cb( matt_reconnect_cb );
-      net_tcp_regist_discon_cb( mqtt_disconnect_cb );
+      net_tcp_regist_recon_cb( matt_reconnect_ex_cb );
+      net_tcp_regist_discon_cb( matt_reconnect_cb );
       net_udp_regist_recv_cb( mqtt_udp_recv_cb );
       net_udp_regist_ready_cb( mqtt_udp_ready_cb );
       /* Initialize network connection (it should be the last) */
