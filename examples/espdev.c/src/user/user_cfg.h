@@ -3,6 +3,8 @@
 
 /** Program configuration structure */
 struct user_cfg {
+  /** 917 + 3 divided by 4 */
+  uint8_t rfu[3];                 /*  3 */
   /** Device mode */
   uint8_t dev_mode;               /*  1 */
   /** Device name e.g: switch */
@@ -63,6 +65,14 @@ struct user_cfg {
   uint8_t ha_node_id[32];         /* 32 */
   /** Device node length */
   uint8_t ha_node_id_len;         /*  1 */
+  /** HA's birth topic */
+  uint8_t ha_birth_t[32];         /* 32 */
+  /** HA's birth topic length */
+  uint8_t ha_birth_t_len;         /*  1 */
+  /** HA's will topic */
+  uint8_t ha_will_t[32];          /* 32 */
+  /** HA's will topic length */
+  uint8_t ha_will_t_len;          /*  1 */
   /** HA's command topic */
   uint8_t ha_cmd_t[32];           /* 32 */
   /** HA's command topic length */
@@ -99,8 +109,6 @@ struct user_cfg {
   uint8_t ha_stat_off[16];        /* 16 */
   /** HA's state off length */
   uint8_t ha_stat_off_len;        /*  1 */
-  /** 851 + 5 divided by 4 */
-  uint8_t rfu[5];                 /*  5 */
 };
 
 uint16_t cfg_init( void );

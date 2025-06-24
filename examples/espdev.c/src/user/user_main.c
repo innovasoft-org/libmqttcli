@@ -12,6 +12,8 @@
 uint32 priv_param_start_sec;
 uint8_t big_buffer[1024] = { 0 };
 const size_t big_buffer_len = sizeof(big_buffer) / sizeof(uint8_t);
+uint8_t small_buffer[128] = { 0 };
+const size_t small_buffer_len = sizeof(small_buffer) / sizeof(uint8_t);
 
 /** Button pressed counter */
 volatile int button_counter = 0;
@@ -132,7 +134,7 @@ static void  gpio_intr_cb(void *param) {
 
 void ICACHE_FLASH_ATTR system_run_cb() {
   extern struct user_cfg cfg;
-  int i;
+  int i, gpio_num;
 
   /* Configure GPIO pins */
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0);
@@ -187,6 +189,18 @@ void ICACHE_FLASH_ATTR system_run_cb() {
       net_init( SOFTAP_MODE, ESPCONN_TCP );
       break;
     case MODE_OPE:
+      /** Restore gpio state (if any) */
+      system_rtc_mem_read(64, &gpio_num,sizeof(gpio_num));
+      if(
+         ((int) 2==gpio_num) || 
+         ((int) 4==gpio_num) ||
+         ((int) 5==gpio_num) ||
+         ((int)12==gpio_num) ||
+         ((int)13==gpio_num) ||
+         ((int)14==gpio_num) ||
+         ((int)15==gpio_num)) {
+        GPIO_OUTPUT_SET(gpio_num, (int) 1);
+      }
       /* Initializing callbacks */
       net_regist_wifi_disconnected_cb( matt_reconnect_cb );
       net_tcp_regist_recv_cb( mqtt_recv_cb );
