@@ -844,8 +844,8 @@ static uint16_t ICACHE_FLASH_ATTR net_set_station() {
   st_config.bssid_set = 0; // need not check MAC address of AP
   os_memcpy(&st_config.ssid, &cfg.wifi_ssid[0], cfg.wifi_ssid_len );
   os_memcpy(&st_config.password, &cfg.wifi_pass[0], cfg.wifi_pass_len );
-  host_name = wifi_station_get_hostname();
 
+  host_name = wifi_station_get_hostname();
   if( host_name == NULL && true != wifi_station_set_hostname( (char*) &cfg.dev_id[0] )) {
     TOLOG(LOG_ERR, "");
     return FUN_E_INTERNAL;

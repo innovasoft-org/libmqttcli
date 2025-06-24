@@ -18,16 +18,16 @@ struct user_cfg cfg;
 void cfg_set_defaults() {
   uint8 *addr = (uint8*) &cfg;
   uint32 chip_id;
-  const char *hex = "0123456789ABCDEF";
+  const char *hex = "0123456789abcdef";
 
   memset(addr, 0, sizeof(struct user_cfg));
 
   /* Parameter: dev_id */
   chip_id = system_get_chip_id();
-  cfg.dev_id[ 0] = 'E';
-  cfg.dev_id[ 1] = 'S';
-  cfg.dev_id[ 2] = 'P';
-  cfg.dev_id[ 3] = '-';
+  cfg.dev_id[ 0] = 'e';
+  cfg.dev_id[ 1] = 's';
+  cfg.dev_id[ 2] = 'p';
+  cfg.dev_id[ 3] = '_';
   cfg.dev_id[ 4] = hex[(((uint8) (chip_id >> 24))>>4)&0xF];
   cfg.dev_id[ 5] = hex[(((uint8) (chip_id >> 24))   )&0xF];
   cfg.dev_id[ 6] = hex[(((uint8) (chip_id >> 16))>>4)&0xF];
@@ -36,6 +36,7 @@ void cfg_set_defaults() {
   cfg.dev_id[ 9] = hex[(((uint8) (chip_id >>  8))   )&0xF];
   cfg.dev_id[10] = hex[(((uint8) (chip_id      ))>>4)&0xF];
   cfg.dev_id[11] = hex[(((uint8) (chip_id      ))   )&0xF];
+  cfg.dev_id[12] = '\0';
   cfg.dev_id_len = 12;
 
   /* Parameter: dev_name */

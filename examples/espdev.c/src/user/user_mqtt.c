@@ -31,7 +31,6 @@ const uint8_t GPIO12[] = "gpio12";
 const uint8_t GPIO13[] = "gpio13";
 const uint8_t GPIO14[] = "gpio14";
 const uint8_t GPIO15[] = "gpio15";
-const uint8_t STATUS_TOPIC[] = "homeassistant/status";
 
 #define STATE_DISCONNECTED    ( (uint8_t) 1 )
 #define STATE_CONNECTED       ( (uint8_t) 2 )
@@ -48,6 +47,7 @@ os_event_t *mqtt_event_queue = NULL;
 struct espconn *espconn;
 extern const size_t big_buffer_len;
 extern uint8_t big_buffer[1024];
+extern uint8_t small_buffer[128];
 clv_t data = { .capacity=sizeof(big_buffer)/sizeof(big_buffer[0]), .value=big_buffer };
 
 static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e);
@@ -76,11 +76,10 @@ static void ICACHE_FLASH_ATTR mqtt_idle_cb(void *arg) {
   }
 
   /* Send the event */
-  system_os_post(MQTT_HANDLER_ID, SIG_TIMEOUT, 0);
-
-  /* Initialize idle timer once again */
-  os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
-  os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
+  if( false == system_os_post(MQTT_HANDLER_ID, SIG_TIMEOUT, 0)) {
+    /* force to reconnect */
+    net_connect(NULL);
+  }
 }
 
 void ICACHE_FLASH_ATTR mqtt_ready_cb(void *arg) {
@@ -96,21 +95,16 @@ void ICACHE_FLASH_ATTR mqtt_ready_cb(void *arg) {
     goto failure;
   }
 
+  /** Store current connection data */
+  espconn = arg;
+
+  idle_counter = 60;
+  state = STATE_DISCONNECTED;
+
   /* Send the event */
   if( false == system_os_post(MQTT_HANDLER_ID, SIG_INIT, 0) ) {
     goto failure;
   }
-
-  /** Store current connection data */
-  espconn = arg;
-
-  /* Start idle timer */
-  os_timer_disarm(&mqtt_idle_timer);
-  os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
-  os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
-
-  idle_counter = 60;
-  state = STATE_DISCONNECTED;
 
   /** Return */
   return;
@@ -161,11 +155,10 @@ void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) 
   // TOLOG(LOG_INFO, "\r\n");
 
   /* Send the event */
-  system_os_post(MQTT_HANDLER_ID, SIG_RX, 0);
-
-  /* Start idle timer */
-  os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
-  os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
+  if( false == system_os_post(MQTT_HANDLER_ID, SIG_RX, 0)) {
+    /* force to reconnect */
+    net_connect(NULL);
+  }
 }
 
 void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short len) {
@@ -197,7 +190,10 @@ void ICACHE_FLASH_ATTR mqtt_sent_cb(void *arg) {
   data.length = 0;
   if( pending_data ) {
     pending_data = 0;
-    system_os_post(MQTT_HANDLER_ID, SIG_TIMEOUT, 0);
+    if( false == system_os_post(MQTT_HANDLER_ID, SIG_TIMEOUT, 0)) {
+      /* force to reconnect */
+      net_connect(NULL);
+    }
   }
 }
 
@@ -244,11 +240,16 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
   /* Subscribing to receive Home Assistant status (it shall be configured in mosquito plugin) */
   ptr = data.value;
   subscribe_params.filter.value = ptr;
-  subscribe_params.filter.length = os_sprintf( ptr, "%s", STATUS_TOPIC );
+  subscribe_params.filter.length = os_sprintf( ptr, "%s/%s", cfg.ha_base_t, cfg.ha_birth_t );
+  TOLOG(LOG_INFO, ptr);
   if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
+    if( false == system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0)) {
+      /* force to reconnect */
+      net_connect(NULL);
+    }
     return RC_IMPL_SPEC_ERR;
   }
-  idle_counter = 60;
+  idle_counter = cfg.dev_ttr / DELAY_1_SEC;
   state = STATE_CONNECTED;
 
   return RC_SUCCESS;
@@ -257,16 +258,18 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
 mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, const mqtt_channel_t *channel) {
   extern struct user_cfg cfg;
   extern volatile int gpio_num;
-  int gpio_state;
+  int gpio_state, c1, c2;
   mqtt_publish_params_t publish_params = { };
   mqtt_subscribe_params_t subscribe_params = { };
-  size_t offset;
-  uint8_t *ptr, *message;
+  size_t offset, topic_len;
+  uint8_t *ptr, *message, *topic;
   uint32_t version;
 
   /* Check if Home Assistant is online */
-  if( ((ARRAYLEN(STATUS_TOPIC) - 1) == pkt->topic.length) && 
-      (0 == os_memcmp(STATUS_TOPIC, pkt->topic.value, pkt->topic.length)) &&
+  topic = &small_buffer[0];
+  topic_len = os_sprintf( topic, "%s/%s", cfg.ha_base_t, cfg.ha_birth_t );
+  if( (topic_len == pkt->topic.length) && 
+      (0 == os_memcmp(topic, pkt->topic.value, pkt->topic.length)) &&
       (cfg.ha_pl_avail_len == pkt->message.length) &&
       (0 == os_memcmp(cfg.ha_pl_avail, pkt->message.value, pkt->message.length)) ) {
     /* Publishing configuration */
@@ -308,7 +311,11 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
     offset += os_sprintf( message + offset, "}");
     publish_params.message.length = offset;
     if( MQTT_SUCCESS != self->publish(self, &publish_params) ) {
-      system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
+      TOLOG(LOG_ERR,"");
+      if( false == system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0)) {
+        /* force to reconnect */
+        net_connect(NULL);
+      }
       return RC_IMPL_SPEC_ERR;
     }
 
@@ -322,25 +329,36 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
       subscribe_params.filter.length = os_sprintf( ptr, "%s/%s/%s/%s", cfg.ha_base_t, cfg.dev_name, cfg.dev_id, cfg.ha_cmd_t );
     }
     if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
-      system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
-      return RC_IMPL_SPEC_ERR;   
+      TOLOG(LOG_ERR,"");
+      if( false == system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0)) {
+        /* force to reconnect */
+        net_connect(NULL);
+      }
+      return RC_IMPL_SPEC_ERR;
     }
     idle_counter = 10;
     state = STATE_AVAILABLE;
     return RC_SUCCESS;
   }
 
-  if( ((ARRAYLEN(STATUS_TOPIC) - 1) == pkt->topic.length) && 
-    (0 == os_memcmp(STATUS_TOPIC, pkt->topic.value, pkt->topic.length)) &&
-    (cfg.ha_pl_not_avail_len == pkt->message.length) &&
-    (0 == os_memcmp(cfg.ha_pl_not_avail, pkt->message.value, pkt->message.length)) ) {
+  /* Check if Home Assistant is offline */
+  topic = &small_buffer[0];
+  topic_len = os_sprintf( topic, "%s/%s", cfg.ha_base_t, cfg.ha_will_t );
+  if( (topic_len == pkt->topic.length) && 
+      (0 == os_memcmp(topic, pkt->topic.value, pkt->topic.length)) &&
+      (cfg.ha_pl_not_avail_len == pkt->message.length) &&
+      (0 == os_memcmp(cfg.ha_pl_not_avail, pkt->message.value, pkt->message.length)) ) {
     /* Close connection */
-    system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
+    TOLOG(LOG_ERR,"");
+    if( false == system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0)) { 
+      /* force to reconnect */
+      net_connect(NULL);
+    }
     return RC_SUCCESS;
   }
 
   if(STATE_OPERATIONAL != state) {
-    system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
+    TOLOG(LOG_ERR,"");
     return RC_IMPL_SPEC_ERR;
   }
 
@@ -423,9 +441,17 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
   message = publish_params.message.value = ptr + publish_params.topic.length;
   publish_params.message.length = os_sprintf( message, "%s", ( gpio_state > 0 ) ? cfg.ha_stat_on : cfg.ha_stat_off );
   if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
-    system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0);
+    TOLOG(LOG_ERR,"");
+    if( false == system_os_post(MQTT_HANDLER_ID, SIG_CLOSE, 0)) {
+      /* force to reconnect */
+      net_connect(NULL);
+    }
     return RC_IMPL_SPEC_ERR;
   }
+
+  /** Save current GPIO state in RTC memory (RAM), shall be last line !!! */
+  gpio_num = (1 == gpio_state) ? gpio_num : 0;
+  system_rtc_mem_write(64, (void*) &gpio_num, sizeof(gpio_num));
 
   return RC_SUCCESS;
 }
@@ -532,7 +558,6 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       }
       else if (state == STATE_DISCONNECTED || state == STATE_CONNECTED ) {
         /* Restart the system */
-        os_timer_disarm(&mqtt_idle_timer);
         system_restart();
         return;
       }
@@ -543,16 +568,22 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       }
       /* Processing and sending */
       rc = cli.process( &cli, &data, NULL);
-      if(rc != MQTT_SUCCESS && rc != MQTT_PENDING_DATA) {
+      length = data.length;
+      if( rc == MQTT_PENDING_DATA ) {
+        /* new data could only be send if current data was sent successfully */
+        pending_data = 1;
+      }
+      else if(rc != MQTT_SUCCESS) {
         if(rc == MQTT_CONN_REJECTED) {
-          TOLOG(LOG_ERR, "Connection rejected");
+          /* Connection rejected */
           TOLOG(LOG_ERR, cfg.br_host);
           TOLOG(LOG_ERR, cfg.br_username);
           TOLOG(LOG_ERR, cfg.br_pass);
           goto restart;
         }
         else if(rc == MQTT_NOT_CONNECTED) {
-          TOLOG(LOG_ERR, "Not connected");
+          /* Not connected */
+          TOLOG(LOG_ERR, "");
           goto restart;     
         }
         else {
@@ -560,8 +591,6 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
         }
         break;
       }
-
-      length = data.length;
 
       if( length && espconn ) {
         TOLOG(LOG_DEBUG, "Sending length: ");
@@ -573,7 +602,7 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
         //  TOLOG(LOG_INFO, tab);
         // }
         // TOLOG(LOG_INFO, "\r\n");
-        if( 0 != (err=espconn_send( espconn, (uint8*) big_buffer, length)) ) {
+        if( 0 != espconn_send( espconn, (uint8*) big_buffer, length) ) {
           TOLOG(LOG_ERR, "");
           goto restart;
         }
@@ -614,6 +643,7 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
         }
         /* Switch off the led (there is negative polarization) */
         GPIO_OUTPUT_SET(13, 1);
+        idle_counter = 0;
         state = STATE_OPERATIONAL;
       }
       break;
@@ -621,21 +651,16 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       break;
   }
 
-  if ( rc == MQTT_PENDING_DATA ) {
-    /* new data could only be send if current data was sent successfully */
-    pending_data = 1;
-  }
-  else {
-    /* start idle timer */
-    os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
-    os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
-  }
+  /* start idle timer */
+  os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
+  os_timer_arm(&mqtt_idle_timer, DELAY_1_SEC, 0);
 
   return;
 
   restart:
+    TOLOG(LOG_DEBUG, "restart");
     /* initiate delayed restart */
-    idle_counter = 60;
+    idle_counter = cfg.dev_ttr / DELAY_1_SEC;
     state = STATE_DISCONNECTED;
     /* start idle timer */
     os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);

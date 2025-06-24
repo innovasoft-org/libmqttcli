@@ -107,12 +107,12 @@ window.addEventListener(\"DOMContentLoaded\", (event) => {\
   <table>\
     <tr>\
       <td class=\"col1\" align=\"right\"><label for=\"dev_ttc\">* Time To Connect[ms]:</label></td>\
-      <td align=\"left\"><input type=\"number\" name=\"dev_ttc\" id=\"dev_ttc\" required value=\"60000\" min=\"0\" max=\"600000\" step=\"500\"></td>\
+      <td align=\"left\"><input type=\"number\" name=\"dev_ttc\" id=\"dev_ttc\" required value=\"60000\" min=\"0\" max=\"600000\" step=\"1000\"></td>\
       <td class=\"err\" id=\"dev_ttc_e\"></td>\
     </tr>\
     <tr>\
       <td align=\"right\"><label for=\"dev_ttr\">* Time To Reset[ms]:</label></td>\
-      <td align=\"left\"><input type=\"number\" name=\"dev_ttr\" id=\"dev_ttr\" required value=\"60000\" min=\"60000\" max=\"600000\" step=\"500\"></td>\
+      <td align=\"left\"><input type=\"number\" name=\"dev_ttr\" id=\"dev_ttr\" required value=\"60000\" min=\"60000\" max=\"600000\" step=\"1000\"></td>\
       <td class=\"err\" id=\"dev_ttr_e\"></td>\
     </tr>\
   </table>\
@@ -168,6 +168,16 @@ window.addEventListener(\"DOMContentLoaded\", (event) => {\
       <td align=\"right\"><label for=\"ha_node_id\">Node ID:</label></td>\
       <td align=\"left\"><input type=\"text\" name=\"ha_node_id\" id=\"ha_node_id\" value=\"\" minlength=\"1\" maxlength=\"32\"></td>\
       <td class=\"err\" id=\"ha_node_id_e\"></td>\
+    </tr>\
+    <tr>\
+      <td align=\"right\"><label for=\"ha_birth_t\">* Birth topic:</label></td>\
+      <td align=\"left\"><input type=\"text\" name=\"ha_birth_t\" id=\"ha_birth_t\" required value=\"status\" minlength=\"1\" maxlength=\"32\"></td>\
+      <td class=\"err\" id=\"ha_birth_t_e\"></td>\
+    </tr>\
+    <tr>\
+      <td align=\"right\"><label for=\"ha_will_t\">* Will topic:</label></td>\
+      <td align=\"left\"><input type=\"text\" name=\"ha_will_t\" id=\"ha_will_t\" required value=\"status\" minlength=\"1\" maxlength=\"32\"></td>\
+      <td class=\"err\" id=\"ha_will_t_e\"></td>\
     </tr>\
     <tr>\
       <td align=\"right\"><label for=\"ha_cmd_t\">* Command topic:</label></td>\
@@ -242,6 +252,8 @@ const uint8_t BR_USERNAME[]       = "br_username";
 const uint8_t BR_PASS[]           = "br_pass";
 const uint8_t HA_BASE_T[]         = "ha_base_t";
 const uint8_t HA_NODE_ID[]        = "ha_node_id";
+const uint8_t HA_BIRTH_T[]        = "ha_birth_t";
+const uint8_t HA_WILL_T[]         = "ha_will_t";
 const uint8_t HA_CMD_T[]          = "ha_cmd_t";
 const uint8_t HA_STAT_T[]         = "ha_stat_t";
 const uint8_t HA_AVTY_T[]         = "ha_avty_t";
@@ -270,6 +282,8 @@ typedef enum {
   ID_BR_PASS,
   ID_HA_BASE_T,
   ID_HA_NODE_ID,
+  ID_HA_BIRTH_T,
+  ID_HA_WILL_T,
   ID_HA_CMD_T,
   ID_HA_STAT_T,
   ID_HA_AVTY_T,
@@ -298,6 +312,8 @@ const uint8_t *STRINGS[] = {
   BR_PASS,
   HA_BASE_T,
   HA_NODE_ID,
+  HA_BIRTH_T,
+  HA_WILL_T,
   HA_CMD_T,
   HA_STAT_T,
   HA_AVTY_T,
@@ -363,15 +379,7 @@ json_param:
 
   /* json: string */
   string = ID_EMPTY;
-  if( !os_memcmp( &buf[offset], DEV_TTR, ARRAYLEN(DEV_TTR)-1 ) ) {
-    string = ID_DEV_TTR;
-    offset += ARRAYLEN(DEV_TTR) - 1;
-  }
-  else if( !os_memcmp( &buf[offset], DEV_TTC, ARRAYLEN(DEV_TTC)-1 ) ) {
-    string = ID_DEV_TTC;
-    offset += ARRAYLEN(DEV_TTC) - 1;
-  }
-  else if( !os_memcmp( &buf[offset], WIFI_SSID, ARRAYLEN(WIFI_SSID)-1 ) ) {
+  if( !os_memcmp( &buf[offset], WIFI_SSID, ARRAYLEN(WIFI_SSID)-1 ) ) {
     string = ID_WIFI_SSID;
     offset += ARRAYLEN(WIFI_SSID) - 1;
   }
@@ -406,6 +414,14 @@ json_param:
   else if( !os_memcmp( &buf[offset], HA_NODE_ID, ARRAYLEN(HA_NODE_ID)-1 ) ) {
     string = ID_HA_NODE_ID;
     offset += ARRAYLEN(HA_NODE_ID) - 1;
+  }
+  else if( !os_memcmp( &buf[offset], HA_BIRTH_T, ARRAYLEN(HA_BIRTH_T)-1 ) ) {
+    string = ID_HA_BIRTH_T;
+    offset += ARRAYLEN(HA_BIRTH_T) - 1;
+  }
+  else if( !os_memcmp( &buf[offset], HA_WILL_T, ARRAYLEN(HA_WILL_T)-1 ) ) {
+    string = ID_HA_WILL_T;
+    offset += ARRAYLEN(HA_WILL_T) - 1;
   }
   else if( !os_memcmp( &buf[offset], HA_CMD_T, ARRAYLEN(HA_CMD_T)-1 ) ) {
     string = ID_HA_CMD_T;
@@ -446,6 +462,14 @@ json_param:
   else if( !os_memcmp( &buf[offset], DEV_ID, ARRAYLEN(DEV_ID)-1 ) ) {
     string = ID_DEV_ID;
     offset += ARRAYLEN(DEV_ID) - 1;
+  }
+  else if( !os_memcmp( &buf[offset], DEV_TTR, ARRAYLEN(DEV_TTR)-1 ) ) {
+    string = ID_DEV_TTR;
+    offset += ARRAYLEN(DEV_TTR) - 1;
+  }
+  else if( !os_memcmp( &buf[offset], DEV_TTC, ARRAYLEN(DEV_TTC)-1 ) ) {
+    string = ID_DEV_TTC;
+    offset += ARRAYLEN(DEV_TTC) - 1;
   }
   else {
     return FUN_E_ARGS;
@@ -500,24 +524,6 @@ json_param:
   }
 
   switch(string) {
-    case ID_DEV_TTR:
-      ATOI(value, buf, value_offset, buf_len);
-      // 600000 shall be changed in html string as well
-      if(value > (uint32_t) 600000 || value < (uint32_t) 60000) {
-        error_list[ID_DEV_TTR] = ID_E_LENGTH_INVALID;
-        break;
-      }
-      cfg.dev_ttr = value;
-      break;
-    case ID_DEV_TTC:
-      ATOI(value, buf, value_offset, buf_len);
-      // 600000 shall be changed in html string as well
-      if(value > (uint32_t) 600000) {
-        error_list[ID_DEV_TTC] = ID_E_LENGTH_INVALID;
-        break;
-      }
-      cfg.dev_ttc = value;
-      break;
     case ID_WIFI_SSID:
       if(value_len > ARRAYLEN(cfg.wifi_ssid)) {
         error_list[ID_WIFI_SSID] = ID_E_LENGTH_INVALID;
@@ -590,6 +596,22 @@ json_param:
       }
       os_memcpy(&cfg.ha_node_id[0], &buf[value_offset], value_len);
       cfg.ha_node_id_len = value_len;
+      break;
+    case ID_HA_BIRTH_T:
+      if(value_len > ARRAYLEN(cfg.ha_birth_t)) {
+        error_list[ID_HA_BIRTH_T] = ID_E_LENGTH_INVALID;
+        break;
+      }
+      os_memcpy(&cfg.ha_birth_t[0], &buf[value_offset], value_len);
+      cfg.ha_birth_t_len = value_len;
+      break;
+    case ID_HA_WILL_T:
+      if(value_len > ARRAYLEN(cfg.ha_will_t)) {
+        error_list[ID_HA_WILL_T] = ID_E_LENGTH_INVALID;
+        break;
+      }
+      os_memcpy(&cfg.ha_will_t[0], &buf[value_offset], value_len);
+      cfg.ha_will_t_len = value_len;
       break;
     case ID_HA_CMD_T:
       if(value_len > ARRAYLEN(cfg.ha_cmd_t)) {
@@ -672,6 +694,24 @@ json_param:
         error_list[ID_DEV_ID] = ID_E_VALUE_INVALID;
         break;
       }
+      break;
+    case ID_DEV_TTR:
+      ATOI(value, buf, value_offset, buf_len);
+      // 600000 shall be changed in html string as well
+      if(value > (uint32_t) 600000 || value < (uint32_t) 60000) {
+        error_list[ID_DEV_TTR] = ID_E_LENGTH_INVALID;
+        break;
+      }
+      cfg.dev_ttr = value;
+      break;
+    case ID_DEV_TTC:
+      ATOI(value, buf, value_offset, buf_len);
+      // 600000 shall be changed in html string as well
+      if(value > (uint32_t) 600000) {
+        error_list[ID_DEV_TTC] = ID_E_LENGTH_INVALID;
+        break;
+      }
+      cfg.dev_ttc = value;
       break;
     default:
       return FUN_E_ARGS;
