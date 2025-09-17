@@ -202,13 +202,14 @@ void ICACHE_FLASH_ATTR system_run_cb() {
         GPIO_OUTPUT_SET(gpio_num, (int) 1);
       }
       /* Initializing callbacks */
-      net_regist_wifi_disconnected_cb( matt_reconnect_cb );
+      net_regist_wifi_disconnected_cb( mqtt_reconnect_cb );
       net_tcp_regist_recv_cb( mqtt_recv_cb );
       net_tcp_regist_sent_cb( mqtt_sent_cb );
       net_tcp_regist_connect_cb( mqtt_ready_cb );
-      net_tcp_regist_recon_cb( matt_reconnect_ex_cb );
-      net_tcp_regist_discon_cb( matt_reconnect_cb );
+      net_tcp_regist_recon_cb( mqtt_reconnect_ex_cb );
+      net_tcp_regist_discon_cb( mqtt_reconnect_cb );
       net_udp_regist_recv_cb( mqtt_udp_recv_cb );
+      net_udp_regist_sent_cb( mqtt_udp_sent_cb );
       net_udp_regist_ready_cb( mqtt_udp_ready_cb );
       /* Initialize network connection (it should be the last) */
       net_init( STATION_MODE, ESPCONN_TCP | ESPCONN_UDP );

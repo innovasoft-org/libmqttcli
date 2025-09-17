@@ -29,8 +29,17 @@
 /** Time to force system restart */
 #define DELAY_FORCE_RESTART     300000
 
-/** Time to perform idle action */
+/*Delay 500 miliseconds */
+#define DELAY_250_MS            250
+
+/*Delay 500 miliseconds */
+#define DELAY_500_MS            500
+
+/** Delay 1 second */
 #define DELAY_1_SEC             1000
+
+/** Delay 2 second */
+#define DELAY_2_SEC             2000
 
 /** Delay 5 seconds */
 #define DELAY_5_SEC             5000

@@ -9,6 +9,7 @@
     "connack",
     "discon",
     "disconcb",
+    "disconncb",
     "ESPCONN",
     "esptcp",
     "espudp",

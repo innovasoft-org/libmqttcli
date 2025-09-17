@@ -103,6 +103,9 @@ void ICACHE_FLASH_ATTR dns_send_request() {
   os_timer_setfn(&dns_timeout_timer, (os_timer_func_t *)dns_timeout_cb, NULL);
   os_timer_arm(&dns_timeout_timer, DELAY_5_SEC, 0);
 
+  /* Switch on/off the led (there is negative polarization) */
+  GPIO_OUTPUT_SET(13, !GPIO_INPUT_GET(13));
+
   /* Send the request */
   net_udp_send(request, request_len);
 }

@@ -26,6 +26,7 @@ static void ICACHE_FLASH_ATTR net_reconnect_cb(void *arg);
 static void ICACHE_FLASH_ATTR softap_monitor_cb(void *arg);
 static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg);
 
+static uint32_t timer_delay = DELAY_1_SEC;
 static os_timer_t system_timer;
 static volatile uint8 retry_counter;
 static uint8_t connection_mode;
@@ -58,9 +59,6 @@ static wifi_disconnected_callback wifi_disconnected_cb = default_wifi_disconnect
  */
 static void ICACHE_FLASH_ATTR decrement_retry_counter() {
   extern struct user_cfg cfg;
-
-  /* Disarm idle timer */
-  os_timer_disarm(&system_timer);
 
   if( retry_counter ) {
     --retry_counter;
@@ -494,23 +492,48 @@ LOCAL void ICACHE_FLASH_ATTR server_listen(void *arg)
  * 
  * @param[in] arg Communication parameters
  */
+static void ICACHE_FLASH_ATTR server_idle_cb(void *arg) {
+  static uint8_t counter = 5;
+  uint8_t gpio_input = GPIO_INPUT_GET(13);
+  if(counter) {
+    --counter;
+    timer_delay = DELAY_250_MS;
+    /* toggle the led */
+    gpio_input = !gpio_input;
+  }
+  else {
+    counter = 5;
+    timer_delay = DELAY_2_SEC;
+    /* switch off the led (there is negative polarization) */
+    gpio_input = 1;
+  }
+  os_timer_setfn(&system_timer, (os_timer_func_t *)server_idle_cb, NULL);
+  os_timer_arm(&system_timer, timer_delay, 0);
+  /* Switch on/off the led (there is negative polarization) */
+  GPIO_OUTPUT_SET(13, gpio_input);
+}
+
+/**
+ * @brief Performs access point configuration
+ * 
+ * @param[in] arg Communication parameters
+ */
 static void ICACHE_FLASH_ATTR softap_monitor_cb(void *arg) {
   struct ip_info ipconfig;
 
   TOLOG(LOG_DEBUG, "softap_monitor_cb()");
 
-  /* Disarm timer */
-  os_timer_disarm(&system_timer);
-
   /* Get IP info */
   if( false == wifi_get_ip_info(SOFTAP_IF, &ipconfig) ) {
     TOLOG(LOG_ERR, "");
     decrement_retry_counter();
+    return;
   }
 
   if( !ipconfig.ip.addr ) {
     TOLOG(LOG_ERR, "");
     decrement_retry_counter();
+    return;
   }
 
   /* Configure TCP/IP WWW server on port 80 */
@@ -518,13 +541,20 @@ static void ICACHE_FLASH_ATTR softap_monitor_cb(void *arg) {
   if( 0 != espconn_regist_connectcb( &tcp_conn, server_listen) ) {
     TOLOG(LOG_ERR, "");
     decrement_retry_counter();
+    return;
   }
   if( 0 != espconn_accept( &tcp_conn ) ) {
     TOLOG(LOG_ERR, "");
     decrement_retry_counter();
+    return;
   }
 
   TOLOG(LOG_DEBUG, "Listening...");
+  /* Switch off the led (there is negative polarization) */
+  GPIO_OUTPUT_SET(13, 1);
+  timer_delay = DELAY_250_MS;
+  os_timer_setfn(&system_timer, (os_timer_func_t *)server_idle_cb, NULL);
+  os_timer_arm(&system_timer, timer_delay, 0);
 
   /* Success */
   return;
@@ -544,17 +574,39 @@ uint16_t ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
     os_timer_arm(&system_timer, cfg.dev_ttc, 0);
     /* Switch on the led (there is negative polarization) */
     GPIO_OUTPUT_SET(13, 0);
-    return FUN_E_INTERNAL;
+  }
+  else if(NULL == remote_addr && cfg.dev_ttc == 0) {
+    /* Switch on the led (there is negative polarization) */
+    GPIO_OUTPUT_SET(13, 0);
   }
 
   /* continue to configure at least UDP */
 
   if( ESPCONN_UDP == udp_conn.type ) {
+    /* Force delete and ignore errors */
+    espconn_delete( &udp_conn );
+
     udp_remote_port = MULTICAST_PORT;
     udp_remote_ip[0] = MULTICAST_IP0;
     udp_remote_ip[1] = MULTICAST_IP1;
     udp_remote_ip[2] = MULTICAST_IP2;
     udp_remote_ip[3] = MULTICAST_IP3;
+
+    // os_sprintf(big_buffer, "local = %d.%d.%d.%d, port = %d",
+    //   udp_local_ip[0],
+    //   udp_local_ip[1],
+    //   udp_local_ip[2],
+    //   udp_local_ip[3],
+    //   udp_local_port);
+    // TOLOG(LOG_DEBUG, big_buffer);
+
+    // os_sprintf(big_buffer, "remote = %d.%d.%d.%d, port = %d",
+    //   udp_remote_ip[0],
+    //   udp_remote_ip[1],
+    //   udp_remote_ip[2],
+    //   udp_remote_ip[3],
+    //   udp_remote_port);
+    // TOLOG(LOG_DEBUG, big_buffer);
 
     udp_conn.proto.udp->local_port = udp_local_port;
     udp_conn.proto.udp->local_ip[0] = udp_local_ip[0];
@@ -566,21 +618,30 @@ uint16_t ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
     udp_conn.proto.udp->remote_ip[1] = udp_remote_ip[1];
     udp_conn.proto.udp->remote_ip[2] = udp_remote_ip[2];
     udp_conn.proto.udp->remote_ip[3] = udp_remote_ip[3];    
-    espconn_regist_recvcb(&udp_conn, udp_recv_callback);
-    espconn_regist_sentcb(&udp_conn, udp_sent_callback);
+    if(0 != espconn_regist_recvcb(&udp_conn, udp_recv_callback)) {
+      TOLOG(LOG_ERR, "");
+      return FUN_E_INTERNAL;
+    }
+    if(0 != espconn_regist_sentcb(&udp_conn, udp_sent_callback)) {
+      TOLOG(LOG_ERR, "");
+      return FUN_E_INTERNAL;
+    }
     local.addr = udp_local_ip[0] | (udp_local_ip[1]<<8) | (udp_local_ip[2]<<16) | (udp_local_ip[3]<<24);
     group.addr = udp_remote_ip[0] | (udp_remote_ip[1]<<8) | (udp_remote_ip[2]<<16) | (udp_remote_ip[3]<<24);
     if( 0 != espconn_igmp_join( &local, &group ) ) {
+      TOLOG(LOG_ERR, "");
       return FUN_E_INTERNAL;
     }
-    espconn_delete( &udp_conn );
     err = espconn_create( &udp_conn );
     if( ESPCONN_ISCONN == err) {
+      TOLOG(LOG_ERR, "");
     }
     else if( ESPCONN_MEM == err) {
+      TOLOG(LOG_ERR, "");
       return FUN_E_INTERNAL;
     }
     else if( ESPCONN_ARG == err) {
+      TOLOG(LOG_ERR, "");
       return FUN_E_INTERNAL;
     }
     udp_ready_callback();
@@ -618,14 +679,17 @@ uint16_t ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
     }
     else if( ESPCONN_MEM == err) {
       TOLOG(LOG_ERR, "ESPCONN_MEM");
+      net_reconnect_cb( NULL );
       return FUN_E_INTERNAL;
     }
     else if( ESPCONN_RTE == err) {
       TOLOG(LOG_ERR, "ESPCONN_RTE");
+      net_reconnect_cb( NULL );
       return FUN_E_INTERNAL;
     }
     else if( ESPCONN_ARG == err) {
       TOLOG(LOG_ERR, "ESPCONN_ARG");
+      net_reconnect_cb( NULL );
       return FUN_E_INTERNAL;
     }
   }
@@ -662,9 +726,6 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
 
   TOLOG(LOG_DEBUG, "station_monitor_cb()");
 
-  /* Disarm timer */
-  os_timer_disarm(&system_timer);
-
   /* Switch on/off the led (there is negative polarization) */
   GPIO_OUTPUT_SET(13, !GPIO_INPUT_GET(13));
 
@@ -675,8 +736,6 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
       TOLOG(LOG_INFO, "STATION_GOT_IP");
       /* Switch on the led - got IP */
       GPIO_OUTPUT_SET(13, 0);
-      /* Disarm system timer */
-      os_timer_disarm(&system_timer);
       retry_counter = MAX_RETRY_CHECK_IP;
 
       /* Get IP info */
@@ -691,6 +750,12 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
         decrement_retry_counter();
         return;
       }
+
+      udp_local_port = MULTICAST_PORT;
+      udp_local_ip[0] = (ipconfig.ip.addr      ) & 0xff;
+      udp_local_ip[1] = (ipconfig.ip.addr >>  8) & 0xff;
+      udp_local_ip[2] = (ipconfig.ip.addr >> 16) & 0xff;
+      udp_local_ip[3] = (ipconfig.ip.addr >> 24) & 0xff;
 
       if( ESPCONN_TCP == tcp_conn.type ) {
         /* If the remote server name starts with a number */
@@ -707,13 +772,9 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
           }
         }
         else {
+          espconn_delete( &udp_conn );
+          
           p = &cfg.br_host[ cfg.br_host_len - dns_local_suffix_len];
-
-          udp_local_port = MULTICAST_PORT;
-          udp_local_ip[0] = (ipconfig.ip.addr      ) & 0xFF;
-          udp_local_ip[1] = (ipconfig.ip.addr >>  8) & 0xFF;
-          udp_local_ip[2] = (ipconfig.ip.addr >> 16) & 0xFF;
-          udp_local_ip[3] = (ipconfig.ip.addr >> 24) & 0xFF;
 
           if( 0 == memcmp(p, DNS_LOCAL_SUFFIX, dns_local_suffix_len)) {
             /* Multicast DNS configuration */
@@ -726,10 +787,10 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
           else {
             /* DNS configuration */
             udp_remote_port = REMOTE_DNS_PORT;
-            udp_local_ip[0] = (ipconfig.gw.addr      ) & 0xFF;
-            udp_local_ip[1] = (ipconfig.gw.addr >>  8) & 0xFF;
-            udp_local_ip[2] = (ipconfig.gw.addr >> 16) & 0xFF;
-            udp_local_ip[3] = (ipconfig.gw.addr >> 24) & 0xFF;
+            udp_remote_ip[0] = (ipconfig.gw.addr      ) & 0xFF;
+            udp_remote_ip[1] = (ipconfig.gw.addr >>  8) & 0xFF;
+            udp_remote_ip[2] = (ipconfig.gw.addr >> 16) & 0xFF;
+            udp_remote_ip[3] = (ipconfig.gw.addr >> 24) & 0xFF;
           }
           udp_conn.proto.udp->local_port = udp_local_port;
           udp_conn.proto.udp->local_ip[0] = udp_local_ip[0];
@@ -741,10 +802,14 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
           udp_conn.proto.udp->remote_ip[1] = udp_remote_ip[1];
           udp_conn.proto.udp->remote_ip[2] = udp_remote_ip[2];
           udp_conn.proto.udp->remote_ip[3] = udp_remote_ip[3];
-          espconn_regist_recvcb(&udp_conn, dns_recv_cb);
-          espconn_regist_sentcb(&udp_conn, dns_sent_cb);
-          
-          espconn_delete( &udp_conn );
+          if( 0 != espconn_regist_recvcb(&udp_conn, dns_recv_cb)) {
+            decrement_retry_counter();
+            return;
+          }
+          if( 0 != espconn_regist_sentcb(&udp_conn, dns_sent_cb)) {
+            decrement_retry_counter();
+            return;
+          }
           err = espconn_create( &udp_conn );
           if( ESPCONN_ISCONN == err) { 
           }
@@ -756,6 +821,9 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
             decrement_retry_counter();
             return;
           }
+          /* Switch on the led (there is negative polarization) */
+          GPIO_OUTPUT_SET(13, 0);
+          /* start DNS client */
           dns_ready_cb();
         }
       }

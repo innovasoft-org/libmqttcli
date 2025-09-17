@@ -112,7 +112,7 @@ window.addEventListener(\"DOMContentLoaded\", (event) => {\
     </tr>\
     <tr>\
       <td align=\"right\"><label for=\"dev_ttr\">* Time To Reset[ms]:</label></td>\
-      <td align=\"left\"><input type=\"number\" name=\"dev_ttr\" id=\"dev_ttr\" required value=\"60000\" min=\"60000\" max=\"600000\" step=\"1000\"></td>\
+      <td align=\"left\"><input type=\"number\" name=\"dev_ttr\" id=\"dev_ttr\" required value=\"10000\" min=\"1000\" max=\"600000\" step=\"1000\"></td>\
       <td class=\"err\" id=\"dev_ttr_e\"></td>\
     </tr>\
   </table>\
@@ -336,7 +336,7 @@ const uint16_t NUMBER_OF_FIELDS = ID_DEV_ID;
 uint8_t *send_buffer;
 size_t   send_buffer_offset;
 size_t   send_buffer_len;
-os_timer_t server_restart_timer;
+os_timer_t server_timer;
 
 static void ICACHE_FLASH_ATTR server_restart_cb(void *arg) {
   system_restart();
@@ -976,8 +976,10 @@ finish:
     else {
       TOLOG(LOG_DEBUG, "Config saved");
       /* Initialize restart timer once again */
-      os_timer_setfn(&server_restart_timer, (os_timer_func_t *)server_restart_cb, NULL);
-      os_timer_arm(&server_restart_timer, DELAY_5_SEC, 0);
+      os_timer_setfn(&server_timer, (os_timer_func_t *)server_restart_cb, NULL);
+      os_timer_arm(&server_timer, DELAY_5_SEC, 0);
+      /* Switch off the led (there is negative polarization) */
+      GPIO_OUTPUT_SET(13, 1);
     }
   }
   if(len && ptr) {
