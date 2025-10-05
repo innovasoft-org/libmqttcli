@@ -41,7 +41,7 @@
 
 ## Configuration with `curl`
 ```
-curl -v --header "Content-Type: application/json" --request POST --data '{"dev_ttc":"10000","dev_ttr":"10000","wifi_ssid":"REPLACE_SSID","wifi_pass":"REPLACE_WIWI_PASS","br_host":"homeassistant.local","br_port":"1883","br_userid":"","br_username":"REPLACE_HA_USER","br_pass":"REPLACE_HA_PASSWD","ha_base_t":"homeassistant","ha_node_id":"","ha_birth_t":"status","ha_will_t":"status","ha_cmd_t":"set","ha_stat_t":"state","ha_avty_t":"available","ha_pl_on":"ON","ha_pl_off":"OFF","ha_pl_avail":"online","ha_pl_not_avail":"offline","ha_stat_on":"ON","ha_stat_off":"OFF","dev_id":"esp_00b33fec"}' http://192.168.4.1
+curl -v --header "Content-Type: application/json" --request POST --data '{"dev_ttc":"10000","dev_ttr":"10000","wifi_ssid":"REPLACE_HOME_WIFI_SSID","wifi_pass":"REPLACE_HOME_WIFI_PASS","br_host":"homeassistant.local","br_port":"1883","br_userid":"","br_username":"REPLACE_HA_USER","br_pass":"REPLACE_HA_PASSWD","ha_base_t":"homeassistant","ha_node_id":"","ha_birth_t":"status","ha_will_t":"status","ha_cmd_t":"set","ha_stat_t":"state","ha_avty_t":"available","ha_pl_on":"ON","ha_pl_off":"OFF","ha_pl_avail":"online","ha_pl_not_avail":"offline","ha_stat_on":"ON","ha_stat_off":"OFF","dev_id":"REPLACE_ESP_SSID"}' http://192.168.4.1
 ```
 
 ## Usage
