@@ -14,7 +14,7 @@
 4. Set defaults using: `esptool.py -p /dev/ttyUSB0 -b 115200 write_flash 0xfb000 blank.bin 0xfc000 esp_init_data_default_v08.bin 0xfe000 blank.bin`
 5. Load the software using: `esptool.py -p /dev/ttyUSB0 -b 115200 write_flash 0x00000 eagle.flash.bin 0x10000 eagle.irom0text.bin`
 
-## Configuration
+## Configuration over web site
 1. Select the Wi-Fi on your phone/laptop which is formatted as follows `ESP-XXXXXXXX`
 2. In the web browser enter the following web site `http://192.168.4.1` (<a href="#fig01">Fig. 1</a>)
 3. Set the following mandatory fields:
@@ -26,20 +26,23 @@
   - Write again Wi-Fi name: `Device ID`, to confirm your settings
 4. Click the `Update` button
 5. If configuration was successfull on the web page will be displayed `Data saved successfully.` (<a href="#fig02">Fig. 2</a>)
-
 <p align="center">
   <a name="fig01"> 
   <img src="../../doc/conf_web.png" /> </br>
   <b>Fig. 1. Configuration web page. </b>
   </a>
 </p>
-
 <p align="center">
   <a name="fig02"> 
   <img src="../../doc/conf_success.png" /> </br>
   <b>Fig. 2. Configuration successfull. </b>
   </a>
 </p>
+
+## Configuration with `curl`
+```
+curl -v --header "Content-Type: application/json" --request POST --data '{"dev_ttc":"10000","dev_ttr":"10000","wifi_ssid":"REPLACE_SSID","wifi_pass":"REPLACE_WIWI_PASS","br_host":"homeassistant.local","br_port":"1883","br_userid":"","br_username":"REPLACE_HA_USER","br_pass":"REPLACE_HA_PASSWD","ha_base_t":"homeassistant","ha_node_id":"","ha_birth_t":"status","ha_will_t":"status","ha_cmd_t":"set","ha_stat_t":"state","ha_avty_t":"available","ha_pl_on":"ON","ha_pl_off":"OFF","ha_pl_avail":"online","ha_pl_not_avail":"offline","ha_stat_on":"ON","ha_stat_off":"OFF","dev_id":"esp_00b33fec"}' http://192.168.4.1
+```
 
 ## Usage
 1. Log into your HA service
