@@ -15,7 +15,7 @@
 5. Load the software using: `esptool.py -p /dev/ttyUSB0 -b 115200 write_flash 0x00000 eagle.flash.bin 0x10000 eagle.irom0text.bin`
 
 ## Configuration over web site
-1. Select the Wi-Fi on your phone/laptop which is formatted as follows `ESP-XXXXXXXX`
+1. Select the Wi-Fi on your phone/laptop which is formatted as follows `esp_XXXXXXXX`
 2. In the web browser enter the following web site `http://192.168.4.1` (<a href="#fig01">Fig. 1</a>)
 3. Set the following mandatory fields:
   - Your Wi-Fi name: `SSID`
