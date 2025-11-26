@@ -33,7 +33,7 @@ void log_write(int level, char* filename, int line, char *message) {
   }
 
   /* Format the message */
-  if(len > (ARRAYLEN(log_buffer) / 2) ) {
+  if(len > ARRAYLEN(log_buffer) ) {
     /* message too big - ignored */
     len = os_sprintf(log_buffer, "%8s - %s:%d - ...\r\n", level_name[level], filename, line);
   }

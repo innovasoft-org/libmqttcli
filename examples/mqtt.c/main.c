@@ -770,7 +770,7 @@ void* thread_func(void* arg) {
   cli.set_cb_connack( &cli, cb_connack );
   cli.set_cb_puback( &cli, cb_puback );
   cli.set_br_ip( &cli, srv_ip);
-  cli.set_br_keepalive( &cli, (uint16_t) 10);
+  cli.set_br_keepalive( &cli, (uint16_t) 60);
   if(ctx.userid[0] == 0) {
     now = time(NULL);
     ctx.userid[0] = ctx.publish == 1 ? 'p' : 's';
