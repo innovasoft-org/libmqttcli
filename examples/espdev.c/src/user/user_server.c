@@ -8,6 +8,13 @@
 #include "user_cfg.h"
 #include "user_util.h"
 
+#define SERVER_STATE_NONE                   ((uint8_t) 0x00)
+#define SERVER_STATE_COMPLETED              ((uint8_t) 0x01)
+#define SERVER_STATE_COMPLETED_RECONNECT    ((uint8_t) 0x02)
+#define SERVER_STATE_COMPLETED_RESTART      ((uint8_t) 0x03)
+#define SERVER_STATE_RECONNECT              ((uint8_t) 0x04)
+#define SERVER_STATE_RESTART                ((uint8_t) 0x05)
+
 const uint8_t SERVER_NAME[] = "ESP-HTTPDv1";
 const uint8_t HTTP_VERSION[] = "HTTP/1.1";
 const uint8_t HTTP_SC_200[] = "200 OK";
@@ -107,7 +114,7 @@ window.addEventListener(\"DOMContentLoaded\", (event) => {\
   <table>\
     <tr>\
       <td class=\"col1\" align=\"right\"><label for=\"dev_ttc\">* Time To Connect[ms]:</label></td>\
-      <td align=\"left\"><input type=\"number\" name=\"dev_ttc\" id=\"dev_ttc\" required value=\"60000\" min=\"0\" max=\"600000\" step=\"1000\"></td>\
+      <td align=\"left\"><input type=\"number\" name=\"dev_ttc\" id=\"dev_ttc\" required value=\"10000\" min=\"0\" max=\"600000\" step=\"1000\"></td>\
       <td class=\"err\" id=\"dev_ttc_e\"></td>\
     </tr>\
     <tr>\
@@ -333,13 +340,25 @@ const uint8_t *STRINGS[] = {
 
 const uint16_t NUMBER_OF_FIELDS = ID_DEV_ID;
 
-uint8_t *send_buffer;
+uint8_t *send_buffer, server_state;
 size_t   send_buffer_offset;
 size_t   send_buffer_len;
 os_timer_t server_timer;
 
-static void ICACHE_FLASH_ATTR server_restart_cb(void *arg) {
-  system_restart();
+static void ICACHE_FLASH_ATTR server_idle_cb(void *arg) {
+  /* If server hanged out  */
+  if(server_state == SERVER_STATE_COMPLETED_RECONNECT || server_state == SERVER_STATE_COMPLETED_RESTART) {
+    TOLOG(LOG_DEBUG, "timeout");
+    system_restart();
+  }
+  else if(server_state == SERVER_STATE_RESTART) {
+    TOLOG(LOG_DEBUG, "restart");
+    system_restart();
+  }
+  else if(server_state == SERVER_STATE_RECONNECT) {
+    TOLOG(LOG_DEBUG, "reconnect");
+    net_reconnect();
+  }
 }
 
 static uint16_t ICACHE_FLASH_ATTR parse_config_json(const char* buf, const size_t buf_len, uint8_t *error_list) {
@@ -356,11 +375,11 @@ static uint16_t ICACHE_FLASH_ATTR parse_config_json(const char* buf, const size_
 
   /* json: '{' */
   if(buf[offset] != '{') {
-    return FUN_E_ARGS;
+    return 1;
   }
   ++offset;
   if(buf_len < offset) {
-    return FUN_E_ARGS;
+    return 2;
   }
 
 json_param:
@@ -370,11 +389,11 @@ json_param:
     ++offset;
   }
   if(buf[offset] != '"') {
-    return FUN_E_ARGS;
+    return 3;
   }
   ++offset;
   if(buf_len < offset) {
-    return FUN_E_ARGS;
+    return 4;
   }
 
   /* json: string */
@@ -472,19 +491,19 @@ json_param:
     offset += ARRAYLEN(DEV_TTC) - 1;
   }
   else {
-    return FUN_E_ARGS;
+    return 5;
   }
   if(buf_len < offset) {
-    return FUN_E_ARGS;
+    return 6;
   }
 
   /* json: '"' */
   if(buf[offset] != '"') {
-    return FUN_E_ARGS;
+    return 7;
   }
   ++offset;
   if(buf_len < offset) {
-    return FUN_E_ARGS;
+    return 8;
   }
 
   /* json: ':' */
@@ -492,11 +511,11 @@ json_param:
     ++offset;
   }
   if(buf[offset] != ':') {
-    return FUN_E_ARGS;
+    return 9;
   }
   ++offset;  
   if(buf_len < offset) {
-    return FUN_E_ARGS;
+    return 10;
   }
 
   /* json: '"' */
@@ -504,11 +523,11 @@ json_param:
     ++offset;
   }
   if(buf[offset] != '"') {
-    return FUN_E_ARGS;
+    return 11;
   }
   ++offset;
   if(buf_len < offset) {
-    return FUN_E_ARGS;
+    return 12;
   }
 
   /* json: value */
@@ -520,7 +539,7 @@ json_param:
   }
   ++offset;
   if(buf_len < offset) {
-    return FUN_E_ARGS;
+    return 13;
   }
 
   switch(string) {
@@ -714,7 +733,7 @@ json_param:
       cfg.dev_ttc = value;
       break;
     default:
-      return FUN_E_ARGS;
+      return 14;
   }
 
   /* json: '}' */
@@ -727,17 +746,18 @@ json_param:
   else if(buf[offset] == ',') {
     ++offset;
     if(buf_len < offset) {
-      return FUN_E_ARGS;
+      return 15;
     }
     goto json_param;
   }
 
-  return FUN_E_ARGS;
+  return 16;
 }
 
 void ICACHE_FLASH_ATTR server_sent_cb(void *arg) {
   extern uint8_t big_buffer[1024];
   extern const size_t big_buffer_len;
+  struct espconn *pespconn = arg;
   uint16_t chunk_hdr_len, copy_len, send_len;
   size_t div = (size_t) (send_buffer_len / big_buffer_len);
   uint8_t *ptr = NULL;
@@ -791,9 +811,31 @@ void ICACHE_FLASH_ATTR server_sent_cb(void *arg) {
     ptr[4] = '\n';
     send_len = (uint16_t) 5;
   }
+  else if(server_state == SERVER_STATE_COMPLETED_RECONNECT) {
+    os_timer_disarm(&server_timer);
+    /* Switch off the led (there is negative polarization) */
+    GPIO_OUTPUT_SET(13, 1);
+    /* Force server restart */
+    server_state = SERVER_STATE_RECONNECT;
+    /* Initialize restart timer once again */
+    os_timer_setfn(&server_timer, (os_timer_func_t *)server_idle_cb, arg);
+    os_timer_arm(&server_timer, DELAY_2_SEC, 0);
+    return;
+  }
+  else if(server_state == SERVER_STATE_COMPLETED_RESTART) {
+    os_timer_disarm(&server_timer);
+    /* Switch off the led (there is negative polarization) */
+    GPIO_OUTPUT_SET(13, 1);
+    /* Force server restart */
+    server_state = SERVER_STATE_RESTART;
+    /* Initialize restart timer once again */
+    os_timer_setfn(&server_timer, (os_timer_func_t *)server_idle_cb, arg);
+    os_timer_arm(&server_timer, DELAY_2_SEC, 0);
+    return;
+  }
 
   if(send_len && ptr) {
-    if( espconn_send( (struct espconn*) arg, (uint8*) big_buffer, send_len)) {
+    if( espconn_send( pespconn, ptr, send_len)) {
       TOLOG(LOG_ERR, "");
     }
     TOLOG(LOG_DEBUG, "Send successfully");
@@ -804,16 +846,19 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
   extern uint8_t big_buffer[1024];
   extern const size_t big_buffer_len;
   extern struct user_cfg cfg;
+  struct espconn *pespconn = arg;
   uint8_t error_list[NUMBER_OF_FIELDS + 1];
   uint8_t *ptr = NULL, save_cfg = 0x00;
   uint16_t rc, i;
   size_t offset, length, error_counter, content_len, content_off;
   uint8_t log_text[36] = {0};
 
+  send_buffer = NULL;
   send_buffer_len = send_buffer_offset = 0;
 
-  TOLOG(LOG_DEBUG, "Received:");
-  TOLOG(LOG_DEBUG, pdata);
+  TOLOG(LOG_DEBUG, "server_recv_cb()");
+  //TOLOG(LOG_DEBUG, pdata);
+  os_timer_disarm(&server_timer);
 
   if( 0 == os_memcmp( pdata, "GET", 3 )) {
     ptr = pdata;
@@ -824,23 +869,26 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
     }
     // check /
     if( ptr[offset] != '/') {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_400);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_400, HTTP_HDR_CONTENT_LENGTH);
       goto finish;
     }
     ++offset;
     if( ptr[offset] != ' ' ) {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_404);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_404, HTTP_HDR_CONTENT_LENGTH);
       goto finish;      
     }
     ++offset;
     if( os_memcmp( &ptr[offset], HTTP_VERSION, sizeof(HTTP_VERSION)-1 ) ) {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_505);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_505, HTTP_HDR_CONTENT_LENGTH);
       goto finish;     
     }
-    ptr = &big_buffer[0];
+    ptr = (uint8_t*) &big_buffer[0];
     len =  os_sprintf(ptr      , "%s %s\r\n", HTTP_VERSION, HTTP_SC_200);
     len += os_sprintf(ptr + len, "%s: %s\r\n", HTTP_HDR_SERVER, SERVER_NAME);
     len += os_sprintf(ptr + len, "%s: bytes\r\n", HTTP_HDR_ACCEPT_RANGES);
@@ -848,13 +896,14 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
     len += os_sprintf(ptr + len, "%s: chunked\r\n", HTTP_HDR_TRANSFER_ENCODING);
     len += os_sprintf(ptr + len, "\r\n");
 
+    server_state = SERVER_STATE_COMPLETED;
     send_buffer = (uint8_t*) &html[0];
     send_buffer_len = (size_t) os_strlen(html);
     send_buffer_offset = 0;
     goto finish;
   }
   else if( 0 == os_memcmp( pdata, "POST", 4 )) {
-    ptr = pdata;
+    ptr = (uint8_t*) pdata;
     offset = 4;
     // skip whitespaces
     while( ptr[offset] == ' ' && offset < len ) {
@@ -862,20 +911,23 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
     }
     // check /
     if( ptr[offset] != '/') {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_400);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_400, HTTP_HDR_CONTENT_LENGTH);
       goto finish;
     }
     ++offset;
     if( ptr[offset] != ' ' ) {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_404);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_404, HTTP_HDR_CONTENT_LENGTH);
       goto finish;      
     }
     ++offset;
     if( os_memcmp( &ptr[offset], HTTP_VERSION, sizeof(HTTP_VERSION)-1 ) ) {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_505);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_505, HTTP_HDR_CONTENT_LENGTH);
       goto finish;     
     }
     // Searching for "Content-Length:"
@@ -886,8 +938,9 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
       ++offset;
     }
     if( offset >= len ) {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_400);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_400, HTTP_HDR_CONTENT_LENGTH);
       goto finish;     
     }
     // Skip the "Content-Length:"
@@ -897,15 +950,17 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
       ++offset;
     }
     if( offset >= len ) {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_400);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_400, HTTP_HDR_CONTENT_LENGTH);
       goto finish;     
     }
     // Convert string to int
     ATOI(length, ptr, offset, len);
     if( offset >= len || length == 0 ) {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_400);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_400, HTTP_HDR_CONTENT_LENGTH);
       goto finish;     
     }
     // Searching for "\r\n\r\n"
@@ -916,8 +971,9 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
       ++offset;
     }
     if( offset >= len ) {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s\r\n", HTTP_VERSION, HTTP_SC_400);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_400, HTTP_HDR_CONTENT_LENGTH);
       goto finish;     
     }
     offset += 4;
@@ -926,15 +982,23 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
     // Parse the content
     rc = parse_config_json( &ptr[offset], length, error_list);
     if( FUN_OK != rc ) {
-      ptr = &big_buffer[0];
-      len =  os_sprintf(ptr, "%s %s [%d]\r\n", HTTP_VERSION, HTTP_SC_500, rc);
-      goto finish;         
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      content_off = 512;
+      ptr = (uint8_t*) &big_buffer[ content_off ];
+      content_len = os_sprintf(ptr, "parse_config_json(): rc = %d\r\n", rc);
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr      , "%s %s\r\n", HTTP_VERSION, HTTP_SC_500);
+      len += os_sprintf(ptr + len, "%s: %s\r\n", HTTP_HDR_SERVER, SERVER_NAME);
+      len += os_sprintf(ptr + len, "%s: %d\r\n", HTTP_HDR_CONTENT_LENGTH, content_len);
+      len += os_sprintf(ptr + len, "\r\n");
+      len += os_sprintf(ptr + len, "%s", &big_buffer[ content_off ]);
+      goto finish;
     }
     // Prepare response content:
     content_off = 512;
     error_counter = 0;
     os_memset( &big_buffer[0], 0x00, big_buffer_len );
-    ptr = &big_buffer[ content_off ];
+    ptr = (uint8_t*) &big_buffer[ content_off ];
     content_len = os_sprintf(ptr, "{\"errors\":[");
     for(i=1; i <= NUMBER_OF_FIELDS; ++i) {
       if( 0x00 != error_list[i] ) {
@@ -946,47 +1010,60 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
       /* Remove last ,*/
       content_len -= 1;
     }
-    content_len +=  os_sprintf(ptr + content_len, "]}");
+    content_len +=  os_sprintf(ptr + content_len, "]}\r\n");
     if( 0 == error_counter ) {
       // ctx could be saved now
       save_cfg = 0x01;
     }
-    ptr = &big_buffer[0];
+    server_state = SERVER_STATE_COMPLETED_RECONNECT;
+    ptr = (uint8_t*) &big_buffer[0];
     len =  os_sprintf(ptr      , "%s %s\r\n", HTTP_VERSION, HTTP_SC_200);
     len += os_sprintf(ptr + len, "%s: %s\r\n", HTTP_HDR_SERVER, SERVER_NAME);
     len += os_sprintf(ptr + len, "%s: bytes\r\n", HTTP_HDR_ACCEPT_RANGES);
     len += os_sprintf(ptr + len, "%s: application/json\r\n", HTTP_HDR_CONTENT_TYPE);
     len += os_sprintf(ptr + len, "%s: %d\r\n", HTTP_HDR_CONTENT_LENGTH, content_len);
     len += os_sprintf(ptr + len, "\r\n");
-    len += os_sprintf(ptr + len, "%s\r\n", &big_buffer[ content_off ]);
+    len += os_sprintf(ptr + len, "%s", &big_buffer[ content_off ]);
     goto finish;
   }
 
 finish:
   if( 0x01 == save_cfg ) {
+    server_state = SERVER_STATE_COMPLETED_RESTART;
     save_cfg = 0x00;
     /* Change to operational mode */
     cfg.dev_mode = MODE_OPE;
     /* Save data */
     if( FUN_OK != cfg_save()) {
       TOLOG(LOG_DEBUG, "");
-      ptr = &big_buffer[0];
-      len = os_sprintf(ptr, "{\"errors\":[ {\"field\":\"\", \"message\":\"%s\"} ]}", STRINGS[ ID_E_MEMORY ]);
+      server_state = SERVER_STATE_COMPLETED_RECONNECT;
+      ptr = (uint8_t*) &big_buffer[0];
+      len =  os_sprintf(ptr, "%s %s Memory\r\n%s: 0\r\n\r\n", HTTP_VERSION, HTTP_SC_500, HTTP_HDR_CONTENT_LENGTH);
     }
     else {
       TOLOG(LOG_DEBUG, "Config saved");
-      /* Initialize restart timer once again */
-      os_timer_setfn(&server_timer, (os_timer_func_t *)server_restart_cb, NULL);
-      os_timer_arm(&server_timer, DELAY_5_SEC, 0);
-      /* Switch off the led (there is negative polarization) */
-      GPIO_OUTPUT_SET(13, 1);
     }
   }
   if(len && ptr) {
-    if( espconn_send( (struct espconn*) arg, (uint8*) big_buffer, len)) {
+    if( espconn_send( pespconn, ptr, len)) {
       TOLOG(LOG_ERR, "");
     }
-    ptr[len] = 0;
-    TOLOG(LOG_DEBUG, big_buffer);
+    TOLOG(LOG_DEBUG, "Sent:");
+    // ptr[len] = 0;
+    // TOLOG(LOG_DEBUG, big_buffer);
   }
+  if(server_state == SERVER_STATE_COMPLETED_RESTART || server_state == SERVER_STATE_COMPLETED_RECONNECT) {
+    /* Initialize restart timer once again */
+    os_timer_setfn(&server_timer, (os_timer_func_t *)server_idle_cb, NULL);
+    os_timer_arm(&server_timer, DELAY_2_SEC, 0);
+  }
+}
+
+void ICACHE_FLASH_ATTR server_disconnect_cb(void *arg) {
+  TOLOG(LOG_DEBUG, "server_disconnect_cb");
+}
+
+void ICACHE_FLASH_ATTR server_reconnect_cb(void *arg, sint8 err) {
+  TOLOG(LOG_DEBUG, "server_reconnect_cb");
+  //net_reconnect();
 }

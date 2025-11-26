@@ -20,19 +20,22 @@
 /** How many times station will send request to server */
 #define MAX_RETRY_SEND_REQ      100
 
-/** Delay time for network monitor timer function in ms */
-#define DELAY_NET_MONITOR       100
+// /** Delay time for network monitor timer function in ms */
+// #define DELAY_NET_MONITOR       100
 
-/** Delay time for send function in ms */
-#define DELAY_SEND_REQ_MONITOR  100
+// /** Delay time for send function in ms */
+// #define DELAY_SEND_REQ_MONITOR  100
 
-/** Time to force system restart */
-#define DELAY_FORCE_RESTART     300000
+// /** Time to force system restart */
+// #define DELAY_FORCE_RESTART     300000
 
-/*Delay 500 miliseconds */
+/* Delay 100 miliseconds */
+#define DELAY_100_MS            100
+
+/* Delay 250 miliseconds */
 #define DELAY_250_MS            250
 
-/*Delay 500 miliseconds */
+/* Delay 500 miliseconds */
 #define DELAY_500_MS            500
 
 /** Delay 1 second */
@@ -43,6 +46,9 @@
 
 /** Delay 5 seconds */
 #define DELAY_5_SEC             5000
+
+/** Delay 10 seconds */
+#define DELAY_10_SEC            10000
 
 #define FUN_OK                  (uint16_t) (0x0000)
 #define FUN_W_SENDING           (uint16_t) (0x0001)

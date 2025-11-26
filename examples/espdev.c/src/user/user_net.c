@@ -72,7 +72,7 @@ static void ICACHE_FLASH_ATTR decrement_retry_counter() {
     else {
       system_restart();
     }
-    os_timer_arm(&system_timer, DELAY_NET_MONITOR, 0);
+    os_timer_arm(&system_timer, DELAY_100_MS, 0);
     return;
   }
 
@@ -171,7 +171,7 @@ void ICACHE_FLASH_ATTR net_tcp_regist_sent_cb(espconn_sent_callback sent_callbac
 /**
  * @brief Registers callback for Wi-Fi disconnection.
  * 
- * @param[in] sent_callback Callback to be registered
+ * @param[in] extern_wifi_disconnected_cb Callback to be registered
  */
 void ICACHE_FLASH_ATTR net_regist_wifi_disconnected_cb(wifi_disconnected_callback extern_wifi_disconnected_cb) {
   wifi_disconnected_cb = extern_wifi_disconnected_cb;
@@ -230,12 +230,28 @@ static void ICACHE_FLASH_ATTR default_tcp_recv_cb(void *arg, char *pdata, unsign
  * @param[in] arg Communication parameters
  */
 static void ICACHE_FLASH_ATTR default_tcp_connect_cb(void *arg) {
+  extern uint8_t small_buffer[128];
+  uint8_t rc = 0;
   TOLOG(LOG_DEBUG, "default_tcp_connect_cb()");
-
-  espconn_regist_recvcb( &tcp_conn, tcp_recv_callback);
-  espconn_regist_sentcb( &tcp_conn, tcp_sent_callback);
-  espconn_regist_disconcb( &tcp_conn, tcp_disconnect_callback);
   
+  if( 0 != espconn_regist_recvcb( &tcp_conn, tcp_recv_callback) ) {
+    rc = 1;
+  }
+  if( 0 != espconn_regist_sentcb( &tcp_conn, tcp_sent_callback) ) {
+    rc = 2;
+  }
+  if( 0 != espconn_regist_reconcb( &tcp_conn, tcp_reconnect_callback) ) {
+    rc = 3;
+  }
+  if( 0 != espconn_regist_disconcb( &tcp_conn, tcp_disconnect_callback) ) {
+    rc = 4;
+  }
+
+  if( 0 != rc ) {
+    os_sprintf(small_buffer, "rc = %d", rc);
+    TOLOG(LOG_DEBUG, small_buffer);
+  }
+
   if( tcp_connect_callback != default_tcp_connect_cb ) {
     tcp_connect_callback( arg );
   }
@@ -396,33 +412,6 @@ uint16_t net_udp_send(const uint8_t *data, size_t len) {
 }
 
 /**
- * @brief Sends data using TCP protocol
- * 
- * @param[in] data Pointer to data to send
- * @param[in] len Length of the data
- * @return FUN_OK on success, otherwise: FUN_E_INTERNAL, FUN_E_ARGS
- */
-uint16_t net_tcp_send(const uint8_t *data, size_t len) {
-  uint8_t i;
-  TOLOG(LOG_DEBUG,"net_tcp_send()");
-
-  if( ESPCONN_TCP != tcp_conn.type) {
-    TOLOG(LOG_CRIT,"");
-    return FUN_E_ARGS;
-  }
-
-  if(NULL == data || 0 == len) {
-    TOLOG(LOG_ERR,"");
-    return FUN_E_ARGS;
-  }
-
-  if( espconn_send( &tcp_conn, (uint8*) data, (uint16) len) ) {
-    TOLOG(LOG_ERR, "");
-    return FUN_E_INTERNAL;
-  }
-}
-
-/**
  * @brief Performs ip casting from device specific communication structure into uint32_t
  * 
  * @param[in] arg Communication parameters
@@ -477,14 +466,30 @@ void wifi_handle_event_cb(System_Event_t *evt) {
   }
 }
 
-LOCAL void ICACHE_FLASH_ATTR server_listen(void *arg)
-{
-  struct espconn *pesp_conn = arg;
+LOCAL void ICACHE_FLASH_ATTR server_listen(void *arg) {
+  extern uint8_t small_buffer[128];
+  uint8_t rc = 0;
+  struct espconn *pespconn = arg;
 
-  espconn_regist_recvcb(pesp_conn, tcp_recv_callback );
-  espconn_regist_sentcb(pesp_conn, tcp_sent_callback );
-  espconn_regist_reconcb(pesp_conn, tcp_reconnect_callback);
-  espconn_regist_disconcb(pesp_conn, tcp_disconnect_callback);
+  TOLOG(LOG_DEBUG, "server_listen()");
+
+  if( 0 != espconn_regist_recvcb(pespconn, tcp_recv_callback ) ) {
+    rc = 1;
+  }
+  if( 0 != espconn_regist_sentcb(pespconn, tcp_sent_callback ) ) {
+    rc = 2;
+  }
+  if( 0 != espconn_regist_reconcb(pespconn, tcp_reconnect_callback ) ) {
+    rc = 3;
+  }
+  if( 0 != espconn_regist_disconcb(pespconn, tcp_disconnect_callback ) ) {
+    rc = 4;
+  }
+
+  if( 0 != rc ) {
+    os_sprintf(small_buffer, "rc = %d", rc);
+    TOLOG(LOG_DEBUG, small_buffer);
+  }
 }
 
 /**
@@ -519,52 +524,59 @@ static void ICACHE_FLASH_ATTR server_idle_cb(void *arg) {
  * @param[in] arg Communication parameters
  */
 static void ICACHE_FLASH_ATTR softap_monitor_cb(void *arg) {
+  extern uint8_t small_buffer[128];
+  uint8_t rc = 0;
   struct ip_info ipconfig;
 
   TOLOG(LOG_DEBUG, "softap_monitor_cb()");
 
-  /* Get IP info */
-  if( false == wifi_get_ip_info(SOFTAP_IF, &ipconfig) ) {
-    TOLOG(LOG_ERR, "");
-    decrement_retry_counter();
+  while( 1 ) {
+    /* Get IP info */
+    if( false == wifi_get_ip_info(SOFTAP_IF, &ipconfig) ) {
+      rc = 1;
+      break;
+    }
+
+    if( !ipconfig.ip.addr ) {
+      rc = 2;
+      break;
+    }
+
+    /* Configure TCP/IP WWW server on port 80 */
+    tcp_conn.proto.tcp->local_port = 80;
+    if( 0 != espconn_regist_connectcb( &tcp_conn, server_listen) ) {
+      rc = 3;
+      break;
+    }
+    if( 0 != espconn_accept( &tcp_conn ) ) {
+      rc = 4;
+      break;
+    }
+
+    TOLOG(LOG_DEBUG, "Listening...");
+    /* Switch off the led (there is negative polarization) */
+    GPIO_OUTPUT_SET(13, 1);
+    timer_delay = DELAY_250_MS;
+    os_timer_setfn(&system_timer, (os_timer_func_t *)server_idle_cb, NULL);
+    os_timer_arm(&system_timer, timer_delay, 0);
+
+    /* Success */
     return;
   }
 
-  if( !ipconfig.ip.addr ) {
-    TOLOG(LOG_ERR, "");
-    decrement_retry_counter();
-    return;
-  }
+  /* Failure - print info */
+  os_sprintf(small_buffer, "rc = %d", rc);
+  TOLOG(LOG_DEBUG, small_buffer);
 
-  /* Configure TCP/IP WWW server on port 80 */
-  tcp_conn.proto.tcp->local_port = 80;
-  if( 0 != espconn_regist_connectcb( &tcp_conn, server_listen) ) {
-    TOLOG(LOG_ERR, "");
-    decrement_retry_counter();
-    return;
-  }
-  if( 0 != espconn_accept( &tcp_conn ) ) {
-    TOLOG(LOG_ERR, "");
-    decrement_retry_counter();
-    return;
-  }
-
-  TOLOG(LOG_DEBUG, "Listening...");
-  /* Switch off the led (there is negative polarization) */
-  GPIO_OUTPUT_SET(13, 1);
-  timer_delay = DELAY_250_MS;
-  os_timer_setfn(&system_timer, (os_timer_func_t *)server_idle_cb, NULL);
-  os_timer_arm(&system_timer, timer_delay, 0);
-
-  /* Success */
-  return;
+  decrement_retry_counter();
 }
 
-uint16_t ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
-  extern uint8_t big_buffer[1024];
+void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
+  extern uint8_t small_buffer[128];
   extern struct user_cfg cfg;
   ip_addr_t group, local;
   sint8 err;
+  uint8_t rc = 0;
 
   TOLOG(LOG_DEBUG, "net_connect()");
 
@@ -580,129 +592,133 @@ uint16_t ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
     GPIO_OUTPUT_SET(13, 0);
   }
 
-  /* continue to configure at least UDP */
+  while( 1 ) {
+    if( ESPCONN_UDP == udp_conn.type ) {
+      /* Force delete and ignore errors */
+      espconn_delete( &udp_conn );
 
-  if( ESPCONN_UDP == udp_conn.type ) {
-    /* Force delete and ignore errors */
-    espconn_delete( &udp_conn );
+      udp_remote_port = MULTICAST_PORT;
+      udp_remote_ip[0] = MULTICAST_IP0;
+      udp_remote_ip[1] = MULTICAST_IP1;
+      udp_remote_ip[2] = MULTICAST_IP2;
+      udp_remote_ip[3] = MULTICAST_IP3;
 
-    udp_remote_port = MULTICAST_PORT;
-    udp_remote_ip[0] = MULTICAST_IP0;
-    udp_remote_ip[1] = MULTICAST_IP1;
-    udp_remote_ip[2] = MULTICAST_IP2;
-    udp_remote_ip[3] = MULTICAST_IP3;
+      // os_sprintf(big_buffer, "local = %d.%d.%d.%d, port = %d",
+      //   udp_local_ip[0],
+      //   udp_local_ip[1],
+      //   udp_local_ip[2],
+      //   udp_local_ip[3],
+      //   udp_local_port);
+      // TOLOG(LOG_DEBUG, big_buffer);
 
-    // os_sprintf(big_buffer, "local = %d.%d.%d.%d, port = %d",
-    //   udp_local_ip[0],
-    //   udp_local_ip[1],
-    //   udp_local_ip[2],
-    //   udp_local_ip[3],
-    //   udp_local_port);
-    // TOLOG(LOG_DEBUG, big_buffer);
+      // os_sprintf(big_buffer, "remote = %d.%d.%d.%d, port = %d",
+      //   udp_remote_ip[0],
+      //   udp_remote_ip[1],
+      //   udp_remote_ip[2],
+      //   udp_remote_ip[3],
+      //   udp_remote_port);
+      // TOLOG(LOG_DEBUG, big_buffer);
 
-    // os_sprintf(big_buffer, "remote = %d.%d.%d.%d, port = %d",
-    //   udp_remote_ip[0],
-    //   udp_remote_ip[1],
-    //   udp_remote_ip[2],
-    //   udp_remote_ip[3],
-    //   udp_remote_port);
-    // TOLOG(LOG_DEBUG, big_buffer);
+      udp_conn.proto.udp->local_port = udp_local_port;
+      udp_conn.proto.udp->local_ip[0] = udp_local_ip[0];
+      udp_conn.proto.udp->local_ip[1] = udp_local_ip[1];
+      udp_conn.proto.udp->local_ip[2] = udp_local_ip[2];
+      udp_conn.proto.udp->local_ip[3] = udp_local_ip[3];
+      udp_conn.proto.udp->remote_port = udp_remote_port;
+      udp_conn.proto.udp->remote_ip[0] = udp_remote_ip[0];
+      udp_conn.proto.udp->remote_ip[1] = udp_remote_ip[1];
+      udp_conn.proto.udp->remote_ip[2] = udp_remote_ip[2];
+      udp_conn.proto.udp->remote_ip[3] = udp_remote_ip[3];    
+      if(0 != espconn_regist_recvcb(&udp_conn, udp_recv_callback)) {
+        rc = 1;
+        break;
+      }
+      if(0 != espconn_regist_sentcb(&udp_conn, udp_sent_callback)) {
+        rc = 2;
+        break;
+      }
+      local.addr = udp_local_ip[0] | (udp_local_ip[1]<<8) | (udp_local_ip[2]<<16) | (udp_local_ip[3]<<24);
+      group.addr = udp_remote_ip[0] | (udp_remote_ip[1]<<8) | (udp_remote_ip[2]<<16) | (udp_remote_ip[3]<<24);
+      if( 0 != espconn_igmp_join( &local, &group ) ) {
+        rc = 3;
+        break;
+      }
+      err = espconn_create( &udp_conn );
+      if( ESPCONN_ISCONN == err) {
+        rc = 4;
+      }
+      else if( ESPCONN_MEM == err) {
+        rc = 5;
+      }
+      else if( ESPCONN_ARG == err) {
+        rc = 6;
+      }
+      udp_ready_callback();
+    }
 
-    udp_conn.proto.udp->local_port = udp_local_port;
-    udp_conn.proto.udp->local_ip[0] = udp_local_ip[0];
-    udp_conn.proto.udp->local_ip[1] = udp_local_ip[1];
-    udp_conn.proto.udp->local_ip[2] = udp_local_ip[2];
-    udp_conn.proto.udp->local_ip[3] = udp_local_ip[3];
-    udp_conn.proto.udp->remote_port = udp_remote_port;
-    udp_conn.proto.udp->remote_ip[0] = udp_remote_ip[0];
-    udp_conn.proto.udp->remote_ip[1] = udp_remote_ip[1];
-    udp_conn.proto.udp->remote_ip[2] = udp_remote_ip[2];
-    udp_conn.proto.udp->remote_ip[3] = udp_remote_ip[3];    
-    if(0 != espconn_regist_recvcb(&udp_conn, udp_recv_callback)) {
-      TOLOG(LOG_ERR, "");
-      return FUN_E_INTERNAL;
+    if( NULL == remote_addr) {
+      return;
     }
-    if(0 != espconn_regist_sentcb(&udp_conn, udp_sent_callback)) {
-      TOLOG(LOG_ERR, "");
-      return FUN_E_INTERNAL;
+
+    if( 0x0100007f == remote_addr->addr) {
+      TOLOG(LOG_DEBUG, "standalone");
+      return;
     }
-    local.addr = udp_local_ip[0] | (udp_local_ip[1]<<8) | (udp_local_ip[2]<<16) | (udp_local_ip[3]<<24);
-    group.addr = udp_remote_ip[0] | (udp_remote_ip[1]<<8) | (udp_remote_ip[2]<<16) | (udp_remote_ip[3]<<24);
-    if( 0 != espconn_igmp_join( &local, &group ) ) {
-      TOLOG(LOG_ERR, "");
-      return FUN_E_INTERNAL;
+
+    if( ESPCONN_TCP == tcp_conn.type ) {
+      /* give a time to connect, otherwise reconnect */
+      os_timer_setfn(&system_timer, (os_timer_func_t *) net_reconnect_cb, NULL);
+      os_timer_arm(&system_timer, cfg.dev_ttr, 0);
+      
+      os_sprintf(small_buffer, "ip = %d.%d.%d.%d, port = %d",
+        (remote_addr->addr      ) & 0xFF,
+        (remote_addr->addr >>  8) & 0xFF,
+        (remote_addr->addr >> 16) & 0xFF,
+        (remote_addr->addr >> 24) & 0xFF,
+        cfg.br_port);
+      TOLOG(LOG_DEBUG, small_buffer);
+      tcp_conn.proto.tcp->local_port = espconn_port();
+      tcp_conn.proto.tcp->remote_port = cfg.br_port;
+      tcp_conn.proto.tcp->remote_ip[0] = (remote_addr->addr      ) & 0xFF;
+      tcp_conn.proto.tcp->remote_ip[1] = (remote_addr->addr >>  8) & 0xFF;
+      tcp_conn.proto.tcp->remote_ip[2] = (remote_addr->addr >> 16) & 0xFF;
+      tcp_conn.proto.tcp->remote_ip[3] = (remote_addr->addr >> 24) & 0xFF;
+      if( espconn_regist_connectcb( &tcp_conn, default_tcp_connect_cb) ) {
+        rc = 7;
+        break;
+      }
+      err = espconn_connect( &tcp_conn);
+      if( ESPCONN_ISCONN == err) {
+        TOLOG(LOG_ERR, "ESPCONN_ISCONN");
+      }
+      else if( ESPCONN_MEM == err) {
+        rc = 9;
+        break;
+      }
+      else if( ESPCONN_RTE == err) {
+        rc = 10;
+        break;
+      }
+      else if( ESPCONN_ARG == err) {
+        rc = 11;
+        break;
+      }
     }
-    err = espconn_create( &udp_conn );
-    if( ESPCONN_ISCONN == err) {
-      TOLOG(LOG_ERR, "");
-    }
-    else if( ESPCONN_MEM == err) {
-      TOLOG(LOG_ERR, "");
-      return FUN_E_INTERNAL;
-    }
-    else if( ESPCONN_ARG == err) {
-      TOLOG(LOG_ERR, "");
-      return FUN_E_INTERNAL;
-    }
-    udp_ready_callback();
+
+    /* Signal that communication is possible now */
+    wifi_set_event_handler_cb( wifi_handle_event_cb );
+
+    /* success - exit function */
+    return;
   }
 
-  if( NULL == remote_addr) {
-    return FUN_E_INTERNAL;
-  }
+  /* failure - print info */
+  os_sprintf(small_buffer, "rc = %d", rc);
+  TOLOG(LOG_DEBUG, small_buffer);
 
-  if( ESPCONN_TCP == tcp_conn.type ) {
-    os_sprintf(big_buffer, "ip = %d.%d.%d.%d, port = %d",
-      (remote_addr->addr      ) & 0xFF,
-      (remote_addr->addr >>  8) & 0xFF,
-      (remote_addr->addr >> 16) & 0xFF,
-      (remote_addr->addr >> 24) & 0xFF,
-      cfg.br_port);
-    TOLOG(LOG_DEBUG, big_buffer);
-    tcp_conn.proto.tcp->local_port = espconn_port();
-    tcp_conn.proto.tcp->remote_port = cfg.br_port;
-    tcp_conn.proto.tcp->remote_ip[0] = (remote_addr->addr      ) & 0xFF;
-    tcp_conn.proto.tcp->remote_ip[1] = (remote_addr->addr >>  8) & 0xFF;
-    tcp_conn.proto.tcp->remote_ip[2] = (remote_addr->addr >> 16) & 0xFF;
-    tcp_conn.proto.tcp->remote_ip[3] = (remote_addr->addr >> 24) & 0xFF;
-    if( espconn_regist_connectcb( &tcp_conn, default_tcp_connect_cb) ) {
-      TOLOG(LOG_ERR, "");
-      return FUN_E_INTERNAL;
-    }
-    if( espconn_regist_reconcb( &tcp_conn, tcp_reconnect_callback) ) {
-      TOLOG(LOG_ERR, "");
-      return FUN_E_INTERNAL;
-    }
-    err = espconn_connect( &tcp_conn);
-    if( ESPCONN_ISCONN == err) {
-      TOLOG(LOG_ERR, "ESPCONN_ISCONN");
-    }
-    else if( ESPCONN_MEM == err) {
-      TOLOG(LOG_ERR, "ESPCONN_MEM");
-      net_reconnect_cb( NULL );
-      return FUN_E_INTERNAL;
-    }
-    else if( ESPCONN_RTE == err) {
-      TOLOG(LOG_ERR, "ESPCONN_RTE");
-      net_reconnect_cb( NULL );
-      return FUN_E_INTERNAL;
-    }
-    else if( ESPCONN_ARG == err) {
-      TOLOG(LOG_ERR, "ESPCONN_ARG");
-      net_reconnect_cb( NULL );
-      return FUN_E_INTERNAL;
-    }
-  }
-
-  /* Signal that communication is possible now */
-  wifi_set_event_handler_cb( wifi_handle_event_cb );
-
-  /* Success */
-  return FUN_OK;
-}
-
-void ICACHE_FLASH_ATTR net_tcp_disconnect() {
-  espconn_disconnect( &tcp_conn);
+  decrement_retry_counter();
+  
+  return;
 }
 
 static void ICACHE_FLASH_ATTR net_reconnect_cb(void *arg) {
@@ -717,8 +733,9 @@ static void ICACHE_FLASH_ATTR net_reconnect_cb(void *arg) {
  * @param[in] arg Communication parameters
  */
 static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
+  extern uint8_t small_buffer[128];
   extern struct user_cfg cfg;
-  uint8_t *p;
+  uint8_t *p, rc = 0;
   size_t dns_local_suffix_len = sizeof(DNS_LOCAL_SUFFIX)/sizeof(DNS_LOCAL_SUFFIX[0]) - 1;
   struct ip_info ipconfig;
   ip_addr_t remote;
@@ -740,15 +757,13 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
 
       /* Get IP info */
       if( false == wifi_get_ip_info(STATION_IF, &ipconfig)) {
-        TOLOG(LOG_ERR, "");
-        decrement_retry_counter();
-        return;
+        rc = 1;
+        break;
       }
 
       if( !ipconfig.ip.addr ) {
-        TOLOG(LOG_ERR, "");
-        decrement_retry_counter();
-        return;
+        rc = 2;
+        break;
       }
 
       udp_local_port = MULTICAST_PORT;
@@ -762,14 +777,10 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
         if(cfg.br_host[0] >= '0' && cfg.br_host[0] <= '9') {
           err = espconn_gethostbyname(&tcp_conn, cfg.br_host, &remote, NULL);
           if(err != ESPCONN_OK) {
-            TOLOG(LOG_ERR, "");
-            decrement_retry_counter();
-            return;
+            rc = 3;
+            break;
           }
-          if( FUN_OK != net_connect( &remote ) ) {
-            decrement_retry_counter();
-            return;
-          }
+          net_connect( &remote );
         }
         else {
           espconn_delete( &udp_conn );
@@ -803,23 +814,23 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
           udp_conn.proto.udp->remote_ip[2] = udp_remote_ip[2];
           udp_conn.proto.udp->remote_ip[3] = udp_remote_ip[3];
           if( 0 != espconn_regist_recvcb(&udp_conn, dns_recv_cb)) {
-            decrement_retry_counter();
-            return;
+            rc = 4;
+            break;
           }
           if( 0 != espconn_regist_sentcb(&udp_conn, dns_sent_cb)) {
-            decrement_retry_counter();
-            return;
+            rc = 5;
+            break;;
           }
           err = espconn_create( &udp_conn );
           if( ESPCONN_ISCONN == err) { 
           }
           else if( ESPCONN_MEM == err) {
-            decrement_retry_counter();
-            return;
+            rc = 6;
+            break;
           }
           else if( ESPCONN_ARG == err) {
-            decrement_retry_counter();
-            return;
+            rc = 7;
+            break;
           }
           /* Switch on the led (there is negative polarization) */
           GPIO_OUTPUT_SET(13, 0);
@@ -827,38 +838,44 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
           dns_ready_cb();
         }
       }
-      break;
+      return;
     }
     case STATION_WRONG_PASSWORD:
       TOLOG(LOG_INFO, "STATION_WRONG_PASSWORD");
       retry_counter = 0;
-      decrement_retry_counter();
-      return;
+      break;
     case STATION_NO_AP_FOUND:
       TOLOG(LOG_INFO, "STATION_NO_AP_FOUND");
       retry_counter = 0;
-      decrement_retry_counter();
-      return;
+      break;
     case STATION_CONNECT_FAIL:
       TOLOG(LOG_INFO, "STATION_CONNECT_FAILED");
-      decrement_retry_counter();
-      return;
+      break;
     case STATION_CONNECTING:
       TOLOG(LOG_INFO, "STATION_CONNECTING");
-      decrement_retry_counter();
-      return;
+      break;
     case STATION_IDLE:
       TOLOG(LOG_INFO, "STATION_IDLE");
-      decrement_retry_counter();
-      return;
+      break;
     default:
-      TOLOG(LOG_ERR, "");
+      rc = 8;
       retry_counter = 0;
-      decrement_retry_counter();
-      return;
+      break;
   }
 
+  /* failure - print info */
+  os_sprintf(small_buffer, "rc = %d", rc);
+  TOLOG(LOG_DEBUG, small_buffer);
+
+  decrement_retry_counter();
   return;
+}
+
+/**
+ * @brief Reconnects communication interface
+ */
+void ICACHE_FLASH_ATTR net_reconnect() {
+  net_reconnect_cb( NULL );
 }
 
 /**
@@ -887,65 +904,80 @@ void ICACHE_FLASH_ATTR net_close() {
   }
 }
 
+void ICACHE_FLASH_ATTR net_reset_timer() {
+  /* Stop current timer (if any) */
+  os_timer_disarm(&system_timer);
+}
+
 /**
  * @brief Sets device as station - it connects to the router
  * 
  * @return FUN_OK o success, otherwise: FUN_E_INTERNAL, FUN_E_ARGS
  */
 static uint16_t ICACHE_FLASH_ATTR net_set_station() {
+  extern uint8_t small_buffer[128];
   extern struct user_cfg cfg;
   struct station_config st_config;
   char* host_name = NULL;
+  uint8_t rc = 0;
 
   TOLOG(LOG_DEBUG, "net_set_station()");
 
-  /* Initialize Station connection */
-  if( true != wifi_set_opmode_current( STATION_MODE )) {
-    TOLOG(LOG_ERR, "");
-    return FUN_E_INTERNAL;
-  }
-  if( true != wifi_station_get_config( &st_config )) {
-    TOLOG(LOG_ERR, "");
-    return FUN_E_INTERNAL;
-  }
-  os_memset(&st_config, 0x00, sizeof( struct station_config ));
-  st_config.bssid_set = 0; // need not check MAC address of AP
-  os_memcpy(&st_config.ssid, &cfg.wifi_ssid[0], cfg.wifi_ssid_len );
-  os_memcpy(&st_config.password, &cfg.wifi_pass[0], cfg.wifi_pass_len );
+  while( 1 ) {
+    /* Initialize Station connection */
+    if( true != wifi_set_opmode_current( STATION_MODE )) {
+      rc = 1;
+      break;
+    }
+    if( true != wifi_station_get_config( &st_config )) {
+      rc = 2;
+      break;
+    }
+    os_memset(&st_config, 0x00, sizeof( struct station_config ));
+    st_config.bssid_set = 0; // need not check MAC address of AP
+    os_memcpy(&st_config.ssid, &cfg.wifi_ssid[0], cfg.wifi_ssid_len );
+    os_memcpy(&st_config.password, &cfg.wifi_pass[0], cfg.wifi_pass_len );
 
-  host_name = wifi_station_get_hostname();
-  if( host_name == NULL && true != wifi_station_set_hostname( (char*) &cfg.dev_id[0] )) {
-    TOLOG(LOG_ERR, "");
-    return FUN_E_INTERNAL;
+    host_name = wifi_station_get_hostname();
+    if( host_name == NULL && true != wifi_station_set_hostname( (char*) &cfg.dev_id[0] )) {
+      rc = 3;
+      break;
+    }
+
+    if( true != wifi_station_set_auto_connect( 0 )) {
+      rc = 4;
+      break;
+    }
+
+    if( true != wifi_station_set_config_current( &st_config )) {
+      rc = 5;
+      break;
+    }
+
+    if( true != wifi_station_disconnect()) {
+      rc = 6;
+      break;
+    }
+
+    if( true != wifi_station_connect()) {
+      rc = 7;
+      break;
+    }
+
+    /* Configure timers */
+    os_timer_disarm(&system_timer);
+    os_timer_setfn(&system_timer, (os_timer_func_t *)station_monitor_cb, NULL);
+    os_timer_arm(&system_timer, DELAY_100_MS, 0);
+
+    /* Success */
+    return FUN_OK;
   }
 
-  if( true != wifi_station_set_auto_connect( 0 )) {
-    TOLOG(LOG_ERR, "");
-    return FUN_E_INTERNAL;
-  }
+  /* Failure - print info */
+  os_sprintf(small_buffer, "rc = %d", rc);
+  TOLOG(LOG_DEBUG, small_buffer);
 
-  if( true != wifi_station_set_config_current( &st_config )) {
-    TOLOG(LOG_ERR, "");
-    return FUN_E_INTERNAL;
-  }
-
-  if( true != wifi_station_disconnect()) {
-    TOLOG(LOG_ERR, "wifi_station_disconnect() failed\r\n");
-    return FUN_E_INTERNAL;
-  }
-
-  if( true != wifi_station_connect()) {
-    TOLOG(LOG_ERR, "");
-    return FUN_E_INTERNAL;
-  }
-
-  /* Configure timers */
-  os_timer_disarm(&system_timer);
-  os_timer_setfn(&system_timer, (os_timer_func_t *)station_monitor_cb, NULL);
-  os_timer_arm(&system_timer, DELAY_NET_MONITOR, 0);
-
-  /* Success */
-  return FUN_OK;
+  return FUN_E_INTERNAL;
 }
 
 /**
@@ -954,42 +986,52 @@ static uint16_t ICACHE_FLASH_ATTR net_set_station() {
  * @return S_OK on success, otherwise: FUN_E_INTERNAL, FUN_E_ARGS
  */
 static uint16_t ICACHE_FLASH_ATTR net_set_softap() {
+  extern uint8_t small_buffer[128];
   extern struct user_cfg cfg;
   struct softap_config  ap_config;
+  uint8_t rc = 0;
 
   TOLOG(LOG_DEBUG, "net_set_softap()");
 
-  /* Initialize Access Point connection */
-  if( true != wifi_set_opmode_current( SOFTAP_MODE )) {
-    TOLOG(LOG_ERR, "");
-    return FUN_E_INTERNAL;
-  }
-  if( true != wifi_softap_get_config( &ap_config )) {
-    TOLOG(LOG_ERR, "");
-    return FUN_E_INTERNAL;    
-  }
-  /* Set device id as access point ssid */
-  os_memset(&ap_config, 0x00, sizeof( struct softap_config ));
-  ap_config.ssid_len = cfg.dev_id_len;
-  os_memcpy(&ap_config.ssid, &cfg.dev_id[0], cfg.dev_id_len);
-  os_memcpy(&ap_config.password, &cfg.ap_pass[0], cfg.ap_pass_len);
-  ap_config.channel = 1;
-  ap_config.authmode = AUTH_OPEN;
-  ap_config.ssid_hidden = 0;
-  ap_config.max_connection = 4;
-  ap_config.beacon_interval = 100;
-  if( true != wifi_softap_set_config_current( &ap_config )) {
-    TOLOG(LOG_ERR, "");
-    return FUN_E_INTERNAL;
+  while( 1 ) {
+    /* Initialize Access Point connection */
+    if( true != wifi_set_opmode_current( SOFTAP_MODE )) {
+      rc = 1;
+      break;
+    }
+    if( true != wifi_softap_get_config( &ap_config )) {
+      rc = 2;
+      break;
+    }
+    /* Set device id as access point ssid */
+    os_memset(&ap_config, 0x00, sizeof( struct softap_config ));
+    ap_config.ssid_len = cfg.dev_id_len;
+    os_memcpy(&ap_config.ssid, &cfg.dev_id[0], cfg.dev_id_len);
+    os_memcpy(&ap_config.password, &cfg.ap_pass[0], cfg.ap_pass_len);
+    ap_config.channel = 1;
+    ap_config.authmode = AUTH_OPEN;
+    ap_config.ssid_hidden = 0;
+    ap_config.max_connection = 4;
+    ap_config.beacon_interval = 100;
+    if( true != wifi_softap_set_config_current( &ap_config )) {
+      rc = 3;
+      break;
+    }
+
+    /* Configure timers */
+    os_timer_disarm(&system_timer);
+    os_timer_setfn(&system_timer, (os_timer_func_t *)softap_monitor_cb, NULL);
+    os_timer_arm(&system_timer, DELAY_100_MS, 0);
+
+    /* Success */
+    return FUN_OK;
   }
 
-  /* Configure timers */
-  os_timer_disarm(&system_timer);
-  os_timer_setfn(&system_timer, (os_timer_func_t *)softap_monitor_cb, NULL);
-  os_timer_arm(&system_timer, DELAY_NET_MONITOR, 0);
+  /* Failure - print info */
+  os_sprintf(small_buffer, "rc = %d", rc);
+  TOLOG(LOG_DEBUG, small_buffer);
 
-  /* Success */
-  return FUN_OK;
+  return FUN_E_INTERNAL;  
 }
 
 /**

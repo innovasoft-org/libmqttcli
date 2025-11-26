@@ -30,6 +30,7 @@
     "opmode",
     "pdata",
     "pesp",
+    "pespconn",
     "PINGREQ",
     "Piwowarczyk",
     "premote",
@@ -61,7 +62,8 @@
     "ioctl.h": "c",
     "osapi.h": "c",
     "string.h": "c",
-    "type_traits": "c"
+    "type_traits": "c",
+    "espconn.h": "c"
   },
   "C_Cpp.errorSquiggles": "enabled"
 }

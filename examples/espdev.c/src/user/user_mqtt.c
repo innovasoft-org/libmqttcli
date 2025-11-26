@@ -78,7 +78,6 @@ void ICACHE_FLASH_ATTR mqtt_reconnect_cb(void *arg)  {
 }
 
 void ICACHE_FLASH_ATTR mqtt_reconnect_ex_cb(void *arg, sint8 err)  {
-  TOLOG(LOG_DEBUG, "reconnect");
   /* Disarm idle timer */
   os_timer_disarm(&mqtt_idle_timer);
   /* clear the timer */
@@ -107,50 +106,47 @@ static void ICACHE_FLASH_ATTR mqtt_idle_cb(void *arg) {
 
 void ICACHE_FLASH_ATTR mqtt_ready_cb(void *arg) {
   extern struct user_cfg cfg;
-
   TOLOG(LOG_DEBUG, "mqtt ready");
 
-  espconn = NULL;
-  
-  /* Initialize task handler */
-  if( NULL == (mqtt_event_queue = (os_event_t*) malloc( sizeof(os_event_t) * EVENT_QUEUE_LEN))) {
-    goto failure;
+  while( 1 ) {
+    espconn = NULL;
+    /* initialize task handler */
+    if( NULL == (mqtt_event_queue = (os_event_t*) malloc( sizeof(os_event_t) * EVENT_QUEUE_LEN))) {
+      break;
+    }
+    if( false == system_os_task(mqtt_handler, MQTT_HANDLER_ID, mqtt_event_queue, EVENT_QUEUE_LEN)) {
+      break;
+    }
+    /* initialize timer and state  */
+    timer_delay = DELAY_1_SEC;
+    idle_counter = cfg.dev_ttr / timer_delay;
+    state = STATE_DISCONNECTED;
+    /* store current connection data */
+    espconn = arg;
+    /* send the event */
+    if( false == system_os_post(MQTT_HANDLER_ID, SIG_INIT, 0) ) {
+      break;
+    }
+
+    /* reset the timer for connection */
+    net_reset_timer();
+
+    /** success - return */
+    return;
   }
-  if( false == system_os_task(mqtt_handler, MQTT_HANDLER_ID, mqtt_event_queue, EVENT_QUEUE_LEN)) {
-    goto failure;
-  }
 
-  /** Store current connection data */
-  espconn = arg;
-
-  timer_delay = DELAY_1_SEC;
-  idle_counter = cfg.dev_ttr / timer_delay;
-  state = STATE_DISCONNECTED;
-
-  /* Send the event */
-  if( false == system_os_post(MQTT_HANDLER_ID, SIG_INIT, 0) ) {
-    goto failure;
-  }
-
-  /** Return */
-  return;
-
-failure:
-  /* force to reconnect */
+  /* failure - force to connect */
   net_connect(NULL);
 }
 
 void ICACHE_FLASH_ATTR mqtt_udp_ready_cb() {
-  TOLOG(LOG_DEBUG, "mqtt_udp_ready");
+  TOLOG(LOG_DEBUG, "mqtt_udp_ready_cb");
 }
 
 void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) {
-  uint8_t iter;
-  uint32_t event_param_id = EVENT_QUEUE_LEN;
-  uint8_t tab[4] = { 0 };
-  size_t i;
+  uint8_t rc = 0;
 
-  TOLOG(LOG_DEBUG, "recv");
+  TOLOG(LOG_DEBUG, "mqtt_recv_cb");
 
   /* Disarm timers */
   os_timer_disarm(&mqtt_idle_timer);
@@ -158,7 +154,7 @@ void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) 
   while(1) {
     if( big_buffer_len < len) {
       /* recv data too big */
-      TOLOG(LOG_ERR,"");
+      rc = 1;
       /* restart the timer */
       break;
     }
@@ -173,17 +169,16 @@ void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) 
     }
     if(data.length > 0 ) {
       // data in use
-      TOLOG(LOG_ERR,"");
+      rc = 2;
       /* restart the timer */
       break;
     }
     /* copy received data */
     os_memcpy(data.value, pdata, len);
     data.length = len;
-    TOLOG(LOG_DEBUG, "Recv len: ");
-    os_memset(tab, 0x00, sizeof(tab)/sizeof(tab[0]));
-    os_sprintf(tab, "%d", data.length);
-    TOLOG(LOG_DEBUG, tab);
+    os_sprintf(small_buffer, "recv len = %d", data.length);
+    TOLOG(LOG_DEBUG, small_buffer);
+    // size_t i;
     // for(i=0; i<data.length; ++i) {
     //  os_sprintf(tab, "%02x ", big_buffer[i]);
     //  TOLOG(LOG_INFO, tab);
@@ -199,6 +194,10 @@ void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) 
     return;
   }
 
+  /* failure - print info */
+  os_sprintf(small_buffer, "rc = %d", rc);
+  TOLOG(LOG_DEBUG, small_buffer);
+
   if(timer_delay) {
     /* start idle timer */
     os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
@@ -209,7 +208,7 @@ void ICACHE_FLASH_ATTR mqtt_recv_cb(void *arg, char *pdata, unsigned short len) 
 void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short len) {
   remot_info *premote = NULL;
   ip_addr_t ip;
-  uint8_t ins;
+  uint8_t ins, rc = 0;
 
   TOLOG(LOG_DEBUG, "udp recv");
 
@@ -219,6 +218,7 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
   while(1) {
     if( !arg || 2 != len || 0x00 != pdata[1]) {
       /* restart the timer */
+      rc = 1;
       break;
     }
 
@@ -227,7 +227,10 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
     if(0xf0 == ins) {
       /* Send only ping response */
       pdata[0] = 0xff;
-      net_udp_sendto(pdata, len, net_ip_cast(arg), MULTICAST_PORT);
+      if( FUN_OK != net_udp_sendto(pdata, len, net_ip_cast(arg), MULTICAST_PORT)) {
+        rc = 2;
+        break;
+      }
     }
     else if(0xf1 == ins) {
       if(state < STATE_CONNECTED) {
@@ -243,13 +246,13 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
       }
     }
     else if(0xf2 == ins) {
-      /* Reset device */
+      /* reset device */
       wifi_station_disconnect();
       system_restart();
       return;
     }
     else if(0xf3 == ins) {
-      /* Restore factory settings */
+      /* restore factory settings */
       cfg_set_defaults();
       cfg_save();
       system_restart();
@@ -259,6 +262,10 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
     /* restart the timer */
     break;
   }
+
+  /* failure - print info */
+  os_sprintf(small_buffer, "rc = %d", rc);
+  TOLOG(LOG_DEBUG, small_buffer);
 
   if(timer_delay) {
     /* start idle timer */
@@ -319,8 +326,8 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
 
   if( RC_SUCCESS != pkt->rc) {
     TOLOG(LOG_ERR, "");
-    mqtt_delayed_reset();
-    /* connection will be restarted */
+    /* will be reconnected */
+    mqtt_reconnect_cb( NULL );
     return RC_SUCCESS;
   }
 
@@ -331,8 +338,8 @@ mqtt_rc_t cb_connack(const mqtt_cli_ctx_cb_t *self, const mqtt_connack_t *pkt, c
   TOLOG(LOG_INFO, ptr);
   if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
     TOLOG(LOG_ERR, "");
+    /* will be restarted */
     mqtt_delayed_reset();
-    /* connection will be restarted */
     return RC_SUCCESS;
   }
   timer_delay = DELAY_1_SEC;
@@ -400,6 +407,7 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
     publish_params.flags = 0x01;
     if( MQTT_SUCCESS != self->publish(self, &publish_params) ) {
       TOLOG(LOG_ERR,"");
+      /* will be restarted */
       mqtt_delayed_reset();
       return RC_IMPL_SPEC_ERR;
     }
@@ -415,10 +423,14 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
     }
     if(MQTT_SUCCESS != self->subscribe(self, &subscribe_params)) {
       TOLOG(LOG_ERR,"");
+      /* will be restarted */
       mqtt_delayed_reset();
       return RC_IMPL_SPEC_ERR;
     }
-    idle_counter = 10;
+
+    timer_delay = DELAY_1_SEC;
+    // previous value was 10  
+    idle_counter = 1 + cfg.dev_ttc / timer_delay;
     state = STATE_AVAILABLE;
     return RC_SUCCESS;
   }
@@ -430,9 +442,9 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
       (0 == os_memcmp(topic, pkt->topic.value, pkt->topic.length)) &&
       (cfg.ha_pl_not_avail_len == pkt->message.length) &&
       (0 == os_memcmp(cfg.ha_pl_not_avail, pkt->message.value, pkt->message.length)) ) {
-    /* Close connection */
     TOLOG(LOG_ERR,"");
-    mqtt_delayed_reset();
+    /* will be reconnected */
+    mqtt_reconnect_cb( NULL );
     return RC_SUCCESS;
   }
 
@@ -521,6 +533,7 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
   publish_params.message.length = os_sprintf( message, "%s", ( gpio_state > 0 ) ? cfg.ha_stat_on : cfg.ha_stat_off );
   if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
     TOLOG(LOG_ERR,"");
+    /* will be restarted */
     mqtt_delayed_reset();
     /* connection will be restarted */
     return RC_IMPL_SPEC_ERR;
@@ -541,14 +554,12 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
   mqtt_will_params_t will_params = (mqtt_will_params_t) { };
   lv_t cli_userid, cli_username, cli_password;
   uint8_t *ptr = NULL, *message;
-  uint8_t tab[9] = { 0 };
-  size_t length, i;
-  sint8 err;
+  size_t length;
   mqtt_publish_params_t publish_params = { };
   int gpio_state;
   extern volatile int gpio_num;
 
-  TOLOG(LOG_DEBUG, "handler");
+  TOLOG(LOG_DEBUG, "mqtt_handler");
 
   /* Disarm idle timer */
   os_timer_disarm(&mqtt_idle_timer);
@@ -716,7 +727,7 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       data.length = 0;
     case SIG_RX:
       if(STATE_DISCONNECTED == state) {
-        break;     
+        break;
       }
       /* Processing and sending */
       rc = cli.process( &cli, &data, NULL);
@@ -748,10 +759,9 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       }
 
       if( length && espconn ) {
-        TOLOG(LOG_DEBUG, "Sending length: ");
-        os_memset(tab, 0x00, sizeof(tab)/sizeof(tab[0]));
-        os_sprintf(tab, "%d", length);
-        TOLOG(LOG_DEBUG, tab);
+        os_sprintf(small_buffer, "send len = %d", length);
+        TOLOG(LOG_DEBUG, small_buffer);
+        // size_t i;
         // for(i=0; i<length; ++i) {
         //  os_sprintf(tab, "%02x ", big_buffer[i]);
         //  TOLOG(LOG_INFO, tab);
