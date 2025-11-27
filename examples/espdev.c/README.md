@@ -2,7 +2,7 @@
 
 ## Compilation
 1. Configure ESP SDK
-2. Run the script `src/gen_misc.sh`
+2. Run the script `src/gen_misc.sh` and select the following options: 1, 0, 3, 3 and 2 (depends on chip memory).
 3. Binaries will be available in bin folder
 > [!NOTE]
 > If you do not want to compile the source code, its compiled version is also available in `bin` folder.
