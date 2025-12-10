@@ -404,6 +404,7 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
     offset += os_sprintf( message + offset, "\"o\": {\"name\":\"mqttcli\",\"sw\": \"%08x\",\"url\": \"https://www.innovasoft.org\"}", version);
     offset += os_sprintf( message + offset, "}");
     publish_params.message.length = offset;
+    /* message will be retained */
     publish_params.flags = 0x01;
     if( MQTT_SUCCESS != self->publish(self, &publish_params) ) {
       TOLOG(LOG_ERR,"");
@@ -531,6 +532,8 @@ mqtt_rc_t cb_publish(const mqtt_cli_ctx_cb_t *self, const mqtt_publish_t *pkt, c
   }
   message = publish_params.message.value = ptr + publish_params.topic.length;
   publish_params.message.length = os_sprintf( message, "%s", ( gpio_state > 0 ) ? cfg.ha_stat_on : cfg.ha_stat_off );
+  /* message will be retained */
+  publish_params.flags = 0x01;
   if(MQTT_SUCCESS != self->publish(self, &publish_params)) {
     TOLOG(LOG_ERR,"");
     /* will be restarted */
@@ -615,6 +618,8 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       }
       message = will_params.payload.value = ptr + will_params.topic.length;
       will_params.payload.length = os_sprintf( message, "%s", cfg.ha_pl_not_avail );
+      /* WILL will be retained */
+      will_params.retain = 1;
       if( MQTT_SUCCESS != (rc = cli.set_br_will( &cli, &will_params) ) ) {
         /* Protocol WILL configuration failed */
         TOLOG(LOG_ERR,"");
@@ -683,6 +688,8 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
         }
         message = publish_params.message.value = ptr + publish_params.topic.length;
         publish_params.message.length = os_sprintf( message, "%s", cfg.ha_pl_avail );
+        /* message will be retained */
+        publish_params.flags = 0x01;
         if(MQTT_SUCCESS != cli.publish( &cli, &publish_params)) {
           /* Publishing has failed */
           TOLOG(LOG_ERR,"");
@@ -706,6 +713,8 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
         gpio_state = GPIO_INPUT_GET( gpio_num );
         message = publish_params.message.value = ptr + publish_params.topic.length;
         publish_params.message.length = os_sprintf( message, "%s", ( gpio_state > 0 ) ? cfg.ha_stat_on : cfg.ha_stat_off );
+        /* message will be retained */
+        publish_params.flags = 0x01;
         if(MQTT_SUCCESS != cli.publish(&cli, &publish_params)) {
           /* Publishing has failed */
           TOLOG(LOG_ERR,"");
