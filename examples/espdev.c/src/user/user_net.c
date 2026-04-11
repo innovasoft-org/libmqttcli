@@ -530,6 +530,11 @@ static void ICACHE_FLASH_ATTR softap_monitor_cb(void *arg) {
 
   TOLOG(LOG_DEBUG, "softap_monitor_cb()");
 
+  // If device was switched into operational mode
+  if(cfg.dev_mode == MODE_OPE) {
+    return;
+  }
+
   while( 1 ) {
     /* Get IP info */
     if( false == wifi_get_ip_info(SOFTAP_IF, &ipconfig) ) {
