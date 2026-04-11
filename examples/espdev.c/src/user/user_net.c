@@ -524,6 +524,7 @@ static void ICACHE_FLASH_ATTR server_idle_cb(void *arg) {
  * @param[in] arg Communication parameters
  */
 static void ICACHE_FLASH_ATTR softap_monitor_cb(void *arg) {
+  extern struct user_cfg cfg;
   extern uint8_t small_buffer[128];
   uint8_t rc = 0;
   struct ip_info ipconfig;
