@@ -8,7 +8,7 @@
 #include "user_util.h"
 
 const uint8_t DEFAULT_DEV_NAME[] = "switch";
-const uint8_t DEFAULT_DEV_SW[]   = "espcli 3.0";
+const uint8_t DEFAULT_DEV_SW[]   = "espcli 3.1";
 const uint8_t DEFAULT_DEV_HW[]   = "Sonoff 1.0r2";
 const uint32_t DEFAULT_DEV_TTR   = 60000;
 const uint32_t DEFAULT_DEV_TTC   = 60000;
