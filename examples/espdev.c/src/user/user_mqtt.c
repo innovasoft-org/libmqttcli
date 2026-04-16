@@ -579,9 +579,9 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
       if(state != STATE_DISCONNECTED) {
         mqtt_cli_destr( &cli );
         state = STATE_DISCONNECTED;
+        timer_delay = idle_counter = 0;
+        net_connect( NULL );
       }
-      timer_delay = idle_counter = 0;
-      net_connect( NULL );
       break;
     case SIG_RESTART:
       TOLOG(LOG_CRIT,"SIG_RESTART");
