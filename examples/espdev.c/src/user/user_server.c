@@ -1015,7 +1015,6 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
       // ctx could be saved now
       save_cfg = 0x01;
     }
-    server_state = SERVER_STATE_COMPLETED_RECONNECT;
     ptr = (uint8_t*) &big_buffer[0];
     len =  os_sprintf(ptr      , "%s %s\r\n", HTTP_VERSION, HTTP_SC_200);
     len += os_sprintf(ptr + len, "%s: %s\r\n", HTTP_HDR_SERVER, SERVER_NAME);
@@ -1024,6 +1023,7 @@ void ICACHE_FLASH_ATTR server_recv_cb(void *arg, char *pdata, unsigned short len
     len += os_sprintf(ptr + len, "%s: %d\r\n", HTTP_HDR_CONTENT_LENGTH, content_len);
     len += os_sprintf(ptr + len, "\r\n");
     len += os_sprintf(ptr + len, "%s", &big_buffer[ content_off ]);
+    server_state = SERVER_STATE_COMPLETED_RECONNECT;
     goto finish;
   }
 

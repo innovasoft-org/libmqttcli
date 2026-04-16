@@ -70,6 +70,7 @@ static void ICACHE_FLASH_ATTR decrement_retry_counter() {
       os_timer_setfn(&system_timer, (os_timer_func_t *) softap_monitor_cb, NULL);
     }
     else {
+      TOLOG(LOG_ERR, "");
       system_restart();
     }
     os_timer_arm(&system_timer, DELAY_100_MS, 0);
@@ -91,6 +92,7 @@ static void ICACHE_FLASH_ATTR decrement_retry_counter() {
     }
   }
   else {
+    TOLOG(LOG_ERR, "");
     system_restart();
   }
 }
@@ -531,10 +533,8 @@ static void ICACHE_FLASH_ATTR softap_monitor_cb(void *arg) {
 
   TOLOG(LOG_DEBUG, "softap_monitor_cb()");
 
-  // If device was switched into operational mode
-  if(cfg.dev_mode == MODE_OPE) {
-    return;
-  }
+  /* Disarm system timer */
+  os_timer_disarm(&system_timer);
 
   while( 1 ) {
     /* Get IP info */
@@ -558,8 +558,8 @@ static void ICACHE_FLASH_ATTR softap_monitor_cb(void *arg) {
       rc = 4;
       break;
     }
-
     TOLOG(LOG_DEBUG, "Listening...");
+
     /* Switch off the led (there is negative polarization) */
     GPIO_OUTPUT_SET(13, 1);
     timer_delay = DELAY_250_MS;
@@ -586,16 +586,21 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
 
   TOLOG(LOG_DEBUG, "net_connect()");
 
+  /* Switch on the led (there is negative polarization) */
+  GPIO_OUTPUT_SET(13, 0);
+
   if( NULL == remote_addr && cfg.dev_ttc > 0) {
     /* try to connect again after specified time */
     os_timer_setfn(&system_timer, (os_timer_func_t *) net_reconnect_cb, NULL);
     os_timer_arm(&system_timer, cfg.dev_ttc, 0);
-    /* Switch on the led (there is negative polarization) */
-    GPIO_OUTPUT_SET(13, 0);
+    TOLOG(LOG_DEBUG, "reconnect");
+    return;
   }
   else if(NULL == remote_addr && cfg.dev_ttc == 0) {
-    /* Switch on the led (there is negative polarization) */
-    GPIO_OUTPUT_SET(13, 0);
+    /* restart immediately */
+    TOLOG(LOG_DEBUG, "restart");
+    system_restart();
+    return;
   }
 
   while( 1 ) {
@@ -660,10 +665,6 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
         rc = 6;
       }
       udp_ready_callback();
-    }
-
-    if( NULL == remote_addr) {
-      return;
     }
 
     if( 0x0100007f == remote_addr->addr) {
@@ -749,6 +750,9 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
 
   TOLOG(LOG_DEBUG, "station_monitor_cb()");
 
+  /* Disarm system timer */
+  os_timer_disarm(&system_timer);
+
   /* Switch on/off the led (there is negative polarization) */
   GPIO_OUTPUT_SET(13, !GPIO_INPUT_GET(13));
 
@@ -778,6 +782,9 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
       udp_local_ip[2] = (ipconfig.ip.addr >> 16) & 0xff;
       udp_local_ip[3] = (ipconfig.ip.addr >> 24) & 0xff;
 
+      /* set default remote server (this station), case of standalone mode */
+      remote.addr = 0x0100007f;
+
       if( ESPCONN_TCP == tcp_conn.type ) {
         /* If the remote server name starts with a number */
         if(cfg.br_host[0] >= '0' && cfg.br_host[0] <= '9') {
@@ -786,9 +793,9 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
             rc = 3;
             break;
           }
-          net_connect( &remote );
         }
         else {
+          /* if the remote server IF shall be determined using mDNS */
           espconn_delete( &udp_conn );
           
           p = &cfg.br_host[ cfg.br_host_len - dns_local_suffix_len];
@@ -842,8 +849,12 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
           GPIO_OUTPUT_SET(13, 0);
           /* start DNS client */
           dns_ready_cb();
+
+          /* start mDNS */
+          return;
         }
       }
+      net_connect( &remote );
       return;
     }
     case STATION_WRONG_PASSWORD:
@@ -929,6 +940,9 @@ static uint16_t ICACHE_FLASH_ATTR net_set_station() {
 
   TOLOG(LOG_DEBUG, "net_set_station()");
 
+  /* Disarm system timer */
+  os_timer_disarm(&system_timer);
+
   while( 1 ) {
     /* Initialize Station connection */
     if( true != wifi_set_opmode_current( STATION_MODE )) {
@@ -998,6 +1012,9 @@ static uint16_t ICACHE_FLASH_ATTR net_set_softap() {
   uint8_t rc = 0;
 
   TOLOG(LOG_DEBUG, "net_set_softap()");
+
+  /* Disarm system timer */
+  os_timer_disarm(&system_timer);
 
   while( 1 ) {
     /* Initialize Access Point connection */
