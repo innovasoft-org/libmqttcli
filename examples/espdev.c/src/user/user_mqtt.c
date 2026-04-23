@@ -210,7 +210,7 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
   ip_addr_t ip;
   uint8_t ins, rc = 0;
 
-  TOLOG(LOG_DEBUG, "udp recv");
+  TOLOG(LOG_DEBUG, "mqtt_udp_recv_cb");
 
   /* Disarm timers */
   os_timer_disarm(&mqtt_idle_timer);
@@ -233,7 +233,7 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
       }
     }
     else if(0xf1 == ins) {
-      if(state < STATE_CONNECTED) {
+      if(state == STATE_DISCONNECTED) {
         /* force connect to the broker */
         if( ESPCONN_OK != espconn_get_connection_info((struct espconn*) arg, &premote, 0) ) {
           TOLOG(LOG_ERR, "");
@@ -254,20 +254,24 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
     else if(0xf3 == ins) {
       /* restore factory settings */
       cfg_set_defaults();
-      cfg_save();
+      if(cfg_save() != FUN_OK) {
+        rc = 3;
+        break;
+      }
       system_restart();
       return;
     }
 
-    /* restart the timer */
+    /* exit loop */
     break;
   }
 
-  /* failure - print info */
+  /* print result code */
   os_sprintf(small_buffer, "rc = %d", rc);
   TOLOG(LOG_DEBUG, small_buffer);
 
-  if(timer_delay) {
+  /* if TCP connection was established */
+  if(timer_delay && espconn) {
     /* start idle timer */
     os_timer_setfn(&mqtt_idle_timer, (os_timer_func_t *)mqtt_idle_cb, NULL);
     os_timer_arm(&mqtt_idle_timer, timer_delay, 0);

@@ -605,14 +605,32 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
 
   while( 1 ) {
     if( ESPCONN_UDP == udp_conn.type ) {
-      /* Force delete and ignore errors */
-      espconn_delete( &udp_conn );
-
       udp_remote_port = MULTICAST_PORT;
       udp_remote_ip[0] = MULTICAST_IP0;
       udp_remote_ip[1] = MULTICAST_IP1;
       udp_remote_ip[2] = MULTICAST_IP2;
       udp_remote_ip[3] = MULTICAST_IP3;
+
+      udp_conn.proto.udp->local_port = udp_local_port;
+      udp_conn.proto.udp->local_ip[0] = udp_local_ip[0];
+      udp_conn.proto.udp->local_ip[1] = udp_local_ip[1];
+      udp_conn.proto.udp->local_ip[2] = udp_local_ip[2];
+      udp_conn.proto.udp->local_ip[3] = udp_local_ip[3];
+      udp_conn.proto.udp->remote_port = udp_remote_port;
+      udp_conn.proto.udp->remote_ip[0] = udp_remote_ip[0];
+      udp_conn.proto.udp->remote_ip[1] = udp_remote_ip[1];
+      udp_conn.proto.udp->remote_ip[2] = udp_remote_ip[2];
+      udp_conn.proto.udp->remote_ip[3] = udp_remote_ip[3];
+
+      local.addr = udp_local_ip[0] | (udp_local_ip[1]<<8) | (udp_local_ip[2]<<16) | (udp_local_ip[3]<<24);
+      group.addr = udp_remote_ip[0] | (udp_remote_ip[1]<<8) | (udp_remote_ip[2]<<16) | (udp_remote_ip[3]<<24);
+
+      /* Reset callbacks */
+      espconn_regist_recvcb(&udp_conn, NULL);
+      espconn_regist_sentcb(&udp_conn, NULL);
+
+      /* Leave group (if any) */
+      espconn_igmp_leave( &local, &group );
 
       // os_sprintf(big_buffer, "local = %d.%d.%d.%d, port = %d",
       //   udp_local_ip[0],
@@ -630,16 +648,6 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
       //   udp_remote_port);
       // TOLOG(LOG_DEBUG, big_buffer);
 
-      udp_conn.proto.udp->local_port = udp_local_port;
-      udp_conn.proto.udp->local_ip[0] = udp_local_ip[0];
-      udp_conn.proto.udp->local_ip[1] = udp_local_ip[1];
-      udp_conn.proto.udp->local_ip[2] = udp_local_ip[2];
-      udp_conn.proto.udp->local_ip[3] = udp_local_ip[3];
-      udp_conn.proto.udp->remote_port = udp_remote_port;
-      udp_conn.proto.udp->remote_ip[0] = udp_remote_ip[0];
-      udp_conn.proto.udp->remote_ip[1] = udp_remote_ip[1];
-      udp_conn.proto.udp->remote_ip[2] = udp_remote_ip[2];
-      udp_conn.proto.udp->remote_ip[3] = udp_remote_ip[3];    
       if(0 != espconn_regist_recvcb(&udp_conn, udp_recv_callback)) {
         rc = 1;
         break;
@@ -648,8 +656,7 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
         rc = 2;
         break;
       }
-      local.addr = udp_local_ip[0] | (udp_local_ip[1]<<8) | (udp_local_ip[2]<<16) | (udp_local_ip[3]<<24);
-      group.addr = udp_remote_ip[0] | (udp_remote_ip[1]<<8) | (udp_remote_ip[2]<<16) | (udp_remote_ip[3]<<24);
+
       if( 0 != espconn_igmp_join( &local, &group ) ) {
         rc = 3;
         break;
@@ -708,6 +715,10 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
       }
       else if( ESPCONN_ARG == err) {
         rc = 11;
+        break;
+      }
+      else if( 0 != err) {
+        rc = 12;
         break;
       }
     }
