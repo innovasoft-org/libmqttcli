@@ -163,3 +163,7 @@ echo "start..."
 echo ""
 
 make COMPILE=gcc BOOT=$boot APP=$app SPI_SPEED=$spi_speed SPI_MODE=$spi_mode SPI_SIZE_MAP=$spi_size_map
+
+echo "Generate SHA256 sums"
+sha256sum -b ../bin/*.bin > ../bin/SHA256SUMS
+sha256sum --check ../bin/SHA256SUMS
