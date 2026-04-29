@@ -53,7 +53,7 @@ uint32_t idle_counter;
 os_timer_t mqtt_idle_timer;
 /** Event queue */
 os_event_t *mqtt_event_queue = NULL;
-struct espconn *espconn;
+struct espconn *espconn = NULL;
 extern const size_t big_buffer_len;
 extern uint8_t big_buffer[1024];
 extern uint8_t small_buffer[128];
@@ -258,6 +258,7 @@ void ICACHE_FLASH_ATTR mqtt_udp_recv_cb(void *arg, char *pdata, unsigned short l
         rc = 3;
         break;
       }
+      wifi_station_disconnect();
       system_restart();
       return;
     }
@@ -581,15 +582,18 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
     case SIG_CLOSE:
       TOLOG(LOG_CRIT,"SIG_CLOSE");
       if(state != STATE_DISCONNECTED) {
+        espconn = NULL;
         mqtt_cli_destr( &cli );
         state = STATE_DISCONNECTED;
         timer_delay = idle_counter = 0;
         net_connect( NULL );
+        return;
       }
       break;
     case SIG_RESTART:
       TOLOG(LOG_CRIT,"SIG_RESTART");
       if(state != STATE_DISCONNECTED) {
+        espconn = NULL;
         mqtt_cli_destr( &cli );
         state = STATE_DISCONNECTED;
       }
@@ -733,6 +737,7 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
         state = STATE_OPERATIONAL;
       }
       else if (state == STATE_DISCONNECTED || state == STATE_INITIALIZED || state == STATE_CONNECTED || state == STATE_UNSYNCHRONIZED ) {
+        TOLOG(LOG_ERR,"");
         /* Restart the system */
         system_restart();
         return;
@@ -743,6 +748,7 @@ static void ICACHE_FLASH_ATTR mqtt_handler(os_event_t *e) {
         break;
       }
       /* Processing and sending */
+      TOLOG(LOG_ERR,"process");
       rc = cli.process( &cli, &data, NULL);
       length = data.length;
       if( rc == MQTT_PENDING_DATA ) {

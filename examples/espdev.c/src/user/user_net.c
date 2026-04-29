@@ -599,6 +599,7 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
   else if(NULL == remote_addr && cfg.dev_ttc == 0) {
     /* restart immediately */
     TOLOG(LOG_DEBUG, "restart");
+    wifi_station_disconnect();
     system_restart();
     return;
   }
@@ -631,6 +632,9 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
 
       /* Leave group (if any) */
       espconn_igmp_leave( &local, &group );
+
+      /* Close UDP connection (if any) */
+      espconn_delete( &udp_conn );
 
       // os_sprintf(big_buffer, "local = %d.%d.%d.%d, port = %d",
       //   udp_local_ip[0],
@@ -674,13 +678,22 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
       udp_ready_callback();
     }
 
+    /* Signal that communication is possible now */
+    wifi_set_event_handler_cb( wifi_handle_event_cb );
+
+    /* Return if IP 127.0.0.1 was set */
     if( 0x0100007f == remote_addr->addr) {
       TOLOG(LOG_DEBUG, "standalone");
       return;
     }
 
     if( ESPCONN_TCP == tcp_conn.type ) {
-      /* give a time to connect, otherwise reconnect */
+      /* Reset callbacks */
+      espconn_regist_connectcb( &tcp_conn, NULL);
+      /* Close TCP connection (if any) */
+      espconn_delete( &tcp_conn );
+
+      /* Give a time to connect, otherwise reconnect */
       os_timer_setfn(&system_timer, (os_timer_func_t *) net_reconnect_cb, NULL);
       os_timer_arm(&system_timer, cfg.dev_ttr, 0);
       
@@ -701,7 +714,7 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
         rc = 7;
         break;
       }
-      err = espconn_connect( &tcp_conn);
+      err = espconn_connect( &tcp_conn );
       if( ESPCONN_ISCONN == err) {
         TOLOG(LOG_ERR, "ESPCONN_ISCONN");
       }
@@ -722,9 +735,6 @@ void ICACHE_FLASH_ATTR net_connect(ip_addr_t *remote_addr) {
         break;
       }
     }
-
-    /* Signal that communication is possible now */
-    wifi_set_event_handler_cb( wifi_handle_event_cb );
 
     /* success - exit function */
     return;
@@ -799,8 +809,8 @@ static void ICACHE_FLASH_ATTR station_monitor_cb(void *arg) {
       if( ESPCONN_TCP == tcp_conn.type ) {
         /* If the remote server name starts with a number */
         if(cfg.br_host[0] >= '0' && cfg.br_host[0] <= '9') {
-          err = espconn_gethostbyname(&tcp_conn, cfg.br_host, &remote, NULL);
-          if(err != ESPCONN_OK) {
+          remote.addr = ipaddr_addr(cfg.br_host);
+          if(0 == remote.addr) {
             rc = 3;
             break;
           }
